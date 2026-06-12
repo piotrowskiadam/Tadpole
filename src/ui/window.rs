@@ -54,28 +54,15 @@ impl MainWindow {
         let logo_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         logo_box.set_valign(gtk::Align::Center);
 
-        // Search for logo PNG in several locations (dev mode, next to binary, share dir)
-        let logo_candidates: Vec<std::path::PathBuf> = vec![
-            // Dev: repo root via CARGO_MANIFEST_DIR (compile-time)
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tadpolelogonobg.png"),
-            // Installed: next to binary
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.join("tadpolelogonobg.png")))
-                .unwrap_or_default(),
-            // Installed: share directory
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().and_then(|d| d.parent()).map(|d| d.join("share/tadpole/tadpolelogonobg.png")))
-                .unwrap_or_default(),
-        ];
-
-        let logo_path = logo_candidates.into_iter().find(|p| p.exists());
-
-        if let Some(path) = &logo_path {
-            let logo_image = gtk::Image::from_file(path);
-            logo_image.set_pixel_size(30);
-            logo_image.set_valign(gtk::Align::Center);
+        // Embed logo at compile-time to guarantee it loads in all packaging formats (AppImage, Snap, Windows, etc.)
+        let logo_bytes = include_bytes!("../../tadpolelogonobg.png");
+        let gbytes = glib::Bytes::from(&logo_bytes[..]);
+        if let Ok(texture) = gdk::Texture::from_bytes(&gbytes) {
+            let logo_image = gtk::Image::builder()
+                .pixel_size(30)
+                .valign(gtk::Align::Center)
+                .build();
+            logo_image.set_paintable(Some(&texture));
             logo_box.append(&logo_image);
         }
 
