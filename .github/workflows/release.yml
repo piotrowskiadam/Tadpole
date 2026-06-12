@@ -56,8 +56,11 @@ jobs:
         run: |
           sudo snap install snapcraft --classic
           sudo snap install core22
+          sudo snap install gtk-common-themes
+          sudo snap install bare
           sudo snap install gnome-42-2204
           sudo snap install gnome-42-2204-sdk
+
 
       - name: Build Linux Snap
         run: snapcraft pack --destructive-mode
