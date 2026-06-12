@@ -55,6 +55,7 @@ jobs:
       - name: Install Snapcraft and Build Snaps
         run: |
           sudo snap install snapcraft --classic
+          sudo snap install rustup --classic
           sudo snap install core22
           sudo snap install gtk-common-themes
           sudo snap install bare
