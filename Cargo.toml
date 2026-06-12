@@ -3,6 +3,8 @@ name = "tadpole"
 version = "0.1.0"
 edition = "2024"
 description = "Tadpole — a local SEO crawler and site auditing tool"
+license = "MIT"
+
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.11.3", features = ["v4_12"] }
