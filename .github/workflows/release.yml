@@ -52,9 +52,11 @@ jobs:
         run: ./build_appimage.sh
 
       # Build Snap
+      - name: Install Snapcraft
+        run: sudo snap install snapcraft --classic
+
       - name: Build Linux Snap
-        uses: snapcore/action-build@v1
-        id: snapcraft
+        run: sudo snapcraft --destructive-mode
 
       # Upload Artifacts
       - name: Upload Linux Artifacts
@@ -65,7 +67,7 @@ jobs:
             target/debian/*.deb
             target/generate-rpm/*.rpm
             Tadpole-x86_64.AppImage
-            ${{ steps.snapcraft.outputs.snap }}
+            *.snap
 
   # Windows Builds: Zip, Exe Installer
   build-windows:
