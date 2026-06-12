@@ -55,7 +55,7 @@ jobs:
       - name: Build AppImage package
         run: ./build_appimage.sh
 
-      # Upload Artifacts — collect everything into a staging dir first
+      # Stage into a single directory for upload
       - name: Stage Linux artifacts
         run: |
           mkdir -p staging
@@ -68,6 +68,25 @@ jobs:
         with:
           name: tadpole-linux-packages
           path: staging/
+
+  # Snap Build — uses official snapcore/action-build which sets up LXD automatically
+  # This is the canonical way to build snaps in CI (no --destructive-mode, no permission issues)
+  build-snap:
+    name: Build Linux Snap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      - name: Upload Snap Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tadpole-snap
+          path: ${{ steps.snapcraft.outputs.snap }}
 
   # Windows Builds: Zip, Exe Installer
   build-windows:
@@ -152,7 +171,7 @@ jobs:
   # Create Release and Publish Assets
   create-release:
     name: Create GitHub Release
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-snap, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -160,6 +179,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tadpole-linux-packages
+          path: release-assets/
+
+      - name: Download Snap Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tadpole-snap
           path: release-assets/
 
       - name: Download Windows Artifacts
