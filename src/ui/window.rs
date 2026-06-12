@@ -6,7 +6,6 @@ use crate::state::{CrawlState, CrawlConfig, CrawlMode};
 use crate::ui::sidebar::Sidebar;
 use crate::ui::table::Table;
 use crate::ui::details::Details;
-use crate::ui::visualizer::SiteVisualizer;
 
 pub struct MainWindow {
     window: adw::ApplicationWindow,
@@ -111,11 +110,6 @@ impl MainWindow {
             .build();
         header_bar.pack_end(&export_button);
 
-        let sitemap_button = gtk::Button::builder()
-            .icon_name("network-workgroup-symbolic")
-            .tooltip_text("Open Site Map Visualizer")
-            .build();
-        header_bar.pack_end(&sitemap_button);
 
         // Address entry in header bar
         let address_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -259,7 +253,7 @@ impl MainWindow {
         main_window.address_entry.set_visible(!is_list);
         main_window.edit_list_button.set_visible(is_list);
 
-        main_window.setup_events(open_button, save_button, pref_button, export_button, sitemap_button, search_entry);
+        main_window.setup_events(open_button, save_button, pref_button, export_button, search_entry);
 
         main_window
     }
@@ -274,7 +268,6 @@ impl MainWindow {
         save_button: gtk::Button, 
         pref_button: gtk::Button, 
         export_button: gtk::Button,
-        sitemap_button: gtk::Button,
         search_entry: gtk::SearchEntry,
     ) {
         let state = self.state.clone();
@@ -456,27 +449,6 @@ impl MainWindow {
             table_search.set_search_query(entry.text().as_str());
         });
 
-        // Site Map Visualizer button
-        let state_viz = state.clone();
-        let parent_win_viz = main_window_widget.clone();
-        let table_viz = table.clone();
-        let visualizer: Rc<RefCell<Option<SiteVisualizer>>> = Rc::new(RefCell::new(None));
-        sitemap_button.connect_clicked(move |_| {
-            let mut viz_opt = visualizer.borrow_mut();
-            if viz_opt.is_none() {
-                let viz = SiteVisualizer::new(&parent_win_viz);
-                // Wire node selection → select URL in table
-                let table_inner = table_viz.clone();
-                viz.connect_url_selected(move |url| {
-                    table_inner.select_url(&url);
-                });
-                *viz_opt = Some(viz);
-            }
-            if let Some(ref viz) = *viz_opt {
-                viz.refresh(&state_viz);
-                viz.present();
-            }
-        });
 
         // Preferences dialog action
         let state_pref = state.clone();

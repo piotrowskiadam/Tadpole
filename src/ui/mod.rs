@@ -4,4 +4,3 @@ pub mod table;
 pub mod details;
 pub mod window;
 pub mod summary;
-pub mod visualizer;
