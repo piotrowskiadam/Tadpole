@@ -59,11 +59,11 @@ jobs:
         run: |
           sudo snap install snapcraft --classic
           sudo snap install rustup --classic
-          sudo snap install core22
+          sudo snap install core24
           sudo snap install gtk-common-themes
           sudo snap install bare
-          sudo snap install gnome-42-2204
-          sudo snap install gnome-42-2204-sdk
+          sudo snap install gnome-46-2404
+          sudo snap install gnome-46-2404-sdk
 
 
       - name: Build Linux Snap

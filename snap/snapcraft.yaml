@@ -1,5 +1,5 @@
 name: tadpole
-base: core22
+base: core24
 version: '0.1.0'
 summary: Tadpole — Local SEO crawler and site auditing tool
 description: |
