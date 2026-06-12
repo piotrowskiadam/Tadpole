@@ -80,6 +80,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          path-type: inherit
           install: >-
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-gtk4
@@ -97,19 +98,19 @@ jobs:
         shell: msys2 {0}
         run: |
           echo "=== Building Tadpole in Release mode ==="
-          cargo build --release
+          cargo build --release --target x86_64-pc-windows-gnu
           
           echo "=== Creating distribution package ==="
           DIST_DIR="dist/tadpole-windows"
           rm -rf dist
           mkdir -p "$DIST_DIR"
           
-          cp target/release/tadpole.exe "$DIST_DIR/"
+          cp target/x86_64-pc-windows-gnu/release/tadpole.exe "$DIST_DIR/"
           cp tadpolelogo.png "$DIST_DIR/"
           cp tadpolelogonobg.png "$DIST_DIR/"
           
           echo "=== Resolving and copying DLL dependencies ==="
-          dependencies=$(ldd target/release/tadpole.exe | grep /mingw64/bin | awk '{print $3}')
+          dependencies=$(ldd target/x86_64-pc-windows-gnu/release/tadpole.exe | grep /mingw64/bin | awk '{print $3}')
           for dll in $dependencies; do
               cp "$dll" "$DIST_DIR/"
           done
