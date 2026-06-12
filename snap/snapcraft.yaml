@@ -1,0 +1,39 @@
+name: tadpole
+base: core22
+version: '0.1.0'
+summary: Tadpole — Local SEO crawler and site auditing tool
+description: |
+  Tadpole is a fast, native desktop SEO crawler and site auditor built in Rust and GTK4.
+  It helps you crawl, analyze, and optimize website SEO parameters like meta tags, headings,
+  social graphics, and structured schema data, featuring an interactive force-directed site map.
+
+grade: stable
+confinement: strict
+
+apps:
+  tadpole:
+    command: bin/tadpole
+    extensions: [gnome]
+    desktop: usr/share/applications/com.tadpole.seo.desktop
+    plugs:
+      - home
+      - network
+      - network-bind
+
+parts:
+  tadpole:
+    plugin: rust
+    source: .
+    rust-cargo-parameters: [--release]
+    build-packages:
+      - libgtk-4-dev
+      - libadwaita-1-dev
+      - pkg-config
+    stage-packages:
+      - libgtk-4-1
+      - libadwaita-1-0
+    override-build: |
+      craftctl default
+      # Copy desktop file and icons into target install directories
+      install -Dm644 snap/gui/com.tadpole.seo.desktop $CRAFT_PART_INSTALL/usr/share/applications/com.tadpole.seo.desktop
+      install -Dm644 snap/gui/com.tadpole.seo.png $CRAFT_PART_INSTALL/usr/share/pixmaps/com.tadpole.seo.png

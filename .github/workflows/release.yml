@@ -1,0 +1,164 @@
+name: Build and Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Linux Builds: Snap, Deb, Rpm, AppImage
+  build-linux:
+    name: Build Linux Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Install GTK4 & Adwaita dependencies for compilation
+      - name: Install GTK4 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # Build standard release binary for deb/rpm
+      - name: Build Rust binary
+        run: cargo build --release
+
+      # Install cargo-binstall and packaging tools
+      - name: Install cargo packaging tools
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall -y cargo-deb cargo-generate-rpm
+
+      # Package Deb
+      - name: Build Debian package
+        run: cargo deb
+
+      # Package Rpm
+      - name: Build RPM package
+        run: cargo generate-rpm
+
+      # Build AppImage
+      - name: Build AppImage package
+        run: ./build_appimage.sh
+
+      # Build Snap
+      - name: Build Linux Snap
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      # Upload Artifacts
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tadpole-linux-packages
+          path: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+            Tadpole-x86_64.AppImage
+            ${{ steps.snapcraft.outputs.snap }}
+
+  # Windows Builds: Zip, Exe Installer
+  build-windows:
+    name: Build Windows Packages
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-libadwaita
+            mingw-w64-x86_64-pkg-config
+            zip
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-gnu
+
+      - name: Compile and Package
+        shell: msys2 {0}
+        run: |
+          echo "=== Building Tadpole in Release mode ==="
+          cargo build --release
+          
+          echo "=== Creating distribution package ==="
+          DIST_DIR="dist/tadpole-windows"
+          rm -rf dist
+          mkdir -p "$DIST_DIR"
+          
+          cp target/release/tadpole.exe "$DIST_DIR/"
+          cp tadpolelogo.png "$DIST_DIR/"
+          cp tadpolelogonobg.png "$DIST_DIR/"
+          
+          echo "=== Resolving and copying DLL dependencies ==="
+          dependencies=$(ldd target/release/tadpole.exe | grep /mingw64/bin | awk '{print $3}')
+          for dll in $dependencies; do
+              cp "$dll" "$DIST_DIR/"
+          done
+          
+          echo "=== Copying GSettings schemas ==="
+          SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
+          mkdir -p "$SCHEMA_DIR"
+          cp /mingw64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
+          cp /mingw64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
+
+      # Build Windows Single-File Installer (.exe) using Inno Setup
+      - name: Build Windows Installer with Inno Setup
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tadpole-windows-packages
+          path: |
+            dist/tadpole-windows.zip
+            dist/TadpoleSetup.exe
+
+  # Create Release and Publish Assets
+  create-release:
+    name: Create GitHub Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tadpole-linux-packages
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tadpole-windows-packages
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.snap
+            *.deb
+            *.rpm
+            *.AppImage
+            *.zip
+            *.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
