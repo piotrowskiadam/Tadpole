@@ -56,7 +56,8 @@ jobs:
         run: sudo snap install snapcraft --classic
 
       - name: Build Linux Snap
-        run: sudo snapcraft --destructive-mode
+        run: snapcraft --destructive-mode
+
 
       # Upload Artifacts
       - name: Upload Linux Artifacts

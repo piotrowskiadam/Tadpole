@@ -24,8 +24,8 @@ parts:
   tadpole:
     plugin: rust
     source: .
-    rust-cargo-parameters: [--release]
     build-packages:
+
       - libgtk-4-dev
       - libadwaita-1-dev
       - pkg-config
