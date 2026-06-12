@@ -13,7 +13,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Linux Builds: Snap, Deb, Rpm, AppImage
+  # Linux Builds: Deb, Rpm, AppImage
   build-linux:
     name: Build Linux Packages
     runs-on: ubuntu-latest
@@ -25,14 +25,15 @@ jobs:
       - name: Install GTK4 dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config \
+            fuse libfuse2 desktop-file-utils
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      # Build standard release binary for deb/rpm
+      # Build standard release binary for deb/rpm/AppImage
       - name: Build Rust binary
         run: cargo build --release
 
@@ -54,34 +55,19 @@ jobs:
       - name: Build AppImage package
         run: ./build_appimage.sh
 
-      # Build Snap
-      - name: Install Snapcraft and Build Snaps
+      # Upload Artifacts — collect everything into a staging dir first
+      - name: Stage Linux artifacts
         run: |
-          sudo snap install snapcraft --classic
-          sudo snap install rustup --classic
-          sudo snap install core24
-          sudo snap install gtk-common-themes
-          sudo snap install bare
-          sudo snap install gnome-46-2404
-          sudo snap install gnome-46-2404-sdk
-          sudo snap install mesa-2404
+          mkdir -p staging
+          cp target/debian/*.deb staging/ 2>/dev/null || true
+          cp target/generate-rpm/*.rpm staging/ 2>/dev/null || true
+          cp Tadpole-x86_64.AppImage staging/ 2>/dev/null || true
 
-
-      - name: Build Linux Snap
-        run: snapcraft pack --destructive-mode
-
-
-
-      # Upload Artifacts
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tadpole-linux-packages
-          path: |
-            target/debian/*.deb
-            target/generate-rpm/*.rpm
-            Tadpole-x86_64.AppImage
-            *.snap
+          path: staging/
 
   # Windows Builds: Zip, Exe Installer
   build-windows:
@@ -118,46 +104,50 @@ jobs:
         run: |
           echo "=== Building Tadpole in Release mode ==="
           cargo build --release --target x86_64-pc-windows-gnu
-          
+
           echo "=== Creating distribution package ==="
           DIST_DIR="dist/tadpole-windows"
           rm -rf dist
           mkdir -p "$DIST_DIR"
-          
+
           cp target/x86_64-pc-windows-gnu/release/tadpole.exe "$DIST_DIR/"
           cp tadpolelogo.png "$DIST_DIR/"
           cp tadpolelogonobg.png "$DIST_DIR/"
-          
+
           echo "=== Resolving and copying DLL dependencies ==="
           dependencies=$(ldd target/x86_64-pc-windows-gnu/release/tadpole.exe | grep /mingw64/bin | awk '{print $3}')
           for dll in $dependencies; do
               cp "$dll" "$DIST_DIR/"
           done
-          
+
           echo "=== Copying GSettings schemas ==="
           SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
           mkdir -p "$SCHEMA_DIR"
           cp /mingw64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
           cp /mingw64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
-          
+
           echo "=== Packaging into tadpole-windows.zip ==="
           cd dist
           zip -r tadpole-windows.zip tadpole-windows/
           cd ..
-
 
       # Build Windows Single-File Installer (.exe) using Inno Setup
       - name: Build Windows Installer with Inno Setup
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
 
+      - name: Stage Windows artifacts
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp dist/tadpole-windows.zip staging/ 2>/dev/null || true
+          cp dist/TadpoleSetup.exe staging/ 2>/dev/null || true
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tadpole-windows-packages
-          path: |
-            dist/tadpole-windows.zip
-            dist/TadpoleSetup.exe
+          path: staging/
 
   # Create Release and Publish Assets
   create-release:
@@ -170,21 +160,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tadpole-linux-packages
+          path: release-assets/
 
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
           name: tadpole-windows-packages
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -la release-assets/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            *.snap
-            *.deb
-            *.rpm
-            *.AppImage
-            *.zip
-            *.exe
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
