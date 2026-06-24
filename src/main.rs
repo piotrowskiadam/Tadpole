@@ -24,7 +24,15 @@ fn main() {
         // Copy icon to user's local icons (standard theme path)
         let local_icons = std::path::PathBuf::from(&home).join(".local/share/icons/hicolor/256x256/apps");
         if std::fs::create_dir_all(&local_icons).is_ok() {
-            let _ = std::fs::write(local_icons.join("com.tadpole.seo.png"), icon_bytes);
+            if std::fs::write(local_icons.join("com.tadpole.seo.png"), icon_bytes).is_ok() {
+                // Update icon theme cache so GNOME Shell picks up the new icon immediately
+                let icon_theme_root = std::path::PathBuf::from(&home).join(".local/share/icons/hicolor");
+                let _ = std::process::Command::new("gtk-update-icon-cache")
+                    .arg("-f")
+                    .arg("-t")
+                    .arg(icon_theme_root)
+                    .status();
+            }
         }
 
         // Copy icon to user's local pixmaps (fallback search path)
@@ -52,7 +60,12 @@ fn main() {
                  StartupWMClass=com.tadpole.seo\n",
                  exec_path
             );
-            let _ = std::fs::write(local_apps.join("com.tadpole.seo.desktop"), desktop_content);
+            if std::fs::write(local_apps.join("com.tadpole.seo.desktop"), desktop_content).is_ok() {
+                // Update desktop database so the shell registers the new launcher immediately
+                let _ = std::process::Command::new("update-desktop-database")
+                    .arg(local_apps)
+                    .status();
+            }
         }
     }
 
