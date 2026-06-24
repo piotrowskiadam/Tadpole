@@ -1,6 +1,6 @@
 name: tadpole
 base: core24
-version: '0.2.2'
+version: '0.2.3'
 summary: Tadpole — Local SEO crawler and site auditing tool
 description: |
   Tadpole is a fast, native desktop SEO crawler and site auditor built in Rust and GTK4.
