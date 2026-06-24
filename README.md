@@ -159,3 +159,9 @@ Tadpole is compiled on Windows inside the MSYS2 environment. It bundles the requ
 
 ### Automated CI/CD Releases (GitHub Actions)
 A GitHub Actions workflow is configured in `.github/workflows/release.yml`. Whenever you push a version tag (e.g. `v0.1.0`), the pipeline automatically builds the Snap, Debian, RPM, AppImage, ZIP, and Inno Setup EXE installer packages, publishing all of them directly as release assets.
+
+---
+
+### Built with AI Assistance
+
+Tadpole has been designed, implemented, and packaged with significant assistance from advanced AI coding agents, showcasing a modern workflow of developer-AI pair programming.
