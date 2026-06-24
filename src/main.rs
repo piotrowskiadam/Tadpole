@@ -15,7 +15,9 @@ fn main() {
             exe_path.pop();
             let loaders_cache = exe_path.join("lib/gdk-pixbuf-2.0/2.10.0/loaders.cache");
             if loaders_cache.exists() {
-                std::env::set_var("GDK_PIXBUF_MODULE_FILE", loaders_cache);
+                unsafe {
+                    std::env::set_var("GDK_PIXBUF_MODULE_FILE", loaders_cache);
+                }
             }
         }
     }
