@@ -1,6 +1,6 @@
 [Setup]
 AppName=Tadpole
-AppVersion=0.2.4
+AppVersion=0.2.5
 DefaultDirName={autopf}\Tadpole
 DefaultGroupName=Tadpole
 UninstallDisplayIcon={app}\tadpole.exe
@@ -17,10 +17,11 @@ DisableDirPage=no
 
 [Files]
 Source: "dist\tadpole-windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "tadpole.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Tadpole"; Filename: "{app}\tadpole.exe"
-Name: "{commondesktop}\Tadpole"; Filename: "{app}\tadpole.exe"
+Name: "{group}\Tadpole"; Filename: "{app}\tadpole.exe"; IconFilename: "{app}\tadpole.ico"
+Name: "{commondesktop}\Tadpole"; Filename: "{app}\tadpole.exe"; IconFilename: "{app}\tadpole.ico"
 
 [Run]
 Filename: "{app}\tadpole.exe"; Description: "Launch Tadpole"; Flags: nowait postinstall skipifsilent
