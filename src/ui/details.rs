@@ -1454,7 +1454,9 @@ fn export_inlinks_to_csv(inlinks: &[String], parent_window: Option<&gtk::Window>
     dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
         if let Ok(file) = result {
             if let Some(path) = file.path() {
-                if let Ok(f) = std::fs::File::create(&path) {
+                if let Ok(mut f) = std::fs::File::create(&path) {
+                    use std::io::Write;
+                    let _ = f.write_all(b"\xEF\xBB\xBF");
                     let mut wtr = csv::Writer::from_writer(f);
                     let _ = wtr.write_record(&["Source Inlink URL"]);
                     for link in inlinks {
@@ -1483,7 +1485,9 @@ fn export_outlinks_to_csv(outlinks: &[String], parent_window: Option<&gtk::Windo
     dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
         if let Ok(file) = result {
             if let Some(path) = file.path() {
-                if let Ok(f) = std::fs::File::create(&path) {
+                if let Ok(mut f) = std::fs::File::create(&path) {
+                    use std::io::Write;
+                    let _ = f.write_all(b"\xEF\xBB\xBF");
                     let mut wtr = csv::Writer::from_writer(f);
                     let _ = wtr.write_record(&["Destination Outlink URL"]);
                     for link in outlinks {
@@ -1512,7 +1516,9 @@ fn export_images_to_csv(images: &[ImageInfo], parent_window: Option<&gtk::Window
     dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
         if let Ok(file) = result {
             if let Some(path) = file.path() {
-                if let Ok(f) = std::fs::File::create(&path) {
+                if let Ok(mut f) = std::fs::File::create(&path) {
+                    use std::io::Write;
+                    let _ = f.write_all(b"\xEF\xBB\xBF");
                     let mut wtr = csv::Writer::from_writer(f);
                     let _ = wtr.write_record(&["Image Source", "Alt Text", "Local Path"]);
                     for img in images {

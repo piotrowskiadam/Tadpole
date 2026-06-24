@@ -298,7 +298,9 @@ impl Table {
     }
 
     pub fn export_to_csv(&self, filepath: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-        let file = std::fs::File::create(filepath)?;
+        use std::io::Write;
+        let mut file = std::fs::File::create(filepath)?;
+        file.write_all(b"\xEF\xBB\xBF")?;
         let mut wtr = csv::Writer::from_writer(file);
         
         // Headers matching details and containing Markdown details
@@ -317,70 +319,107 @@ impl Table {
             if let Some(item) = self.filter_model.item(i) {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
                     if let Some(res) = row_data.get_result() {
-                        let title_str = res.title.clone().unwrap_or_default();
+                        let title_str = res.title.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
                         let title_len = title_str.chars().count().to_string();
-                        let meta_str = res.meta_desc.clone().unwrap_or_default();
+                        let meta_str = res.meta_desc.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
                         let meta_len = meta_str.chars().count().to_string();
                         
+                        let h1_str = res.h1.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let h2_str = res.h2.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let error_msg_str = res.error_message.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let canonical_str = res.canonical.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let og_title_str = res.og_title.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let og_desc_str = res.og_description.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let og_img_str = res.og_image.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let og_url_str = res.og_url.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let og_type_str = res.og_type.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let twitter_title_str = res.twitter_title.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let twitter_desc_str = res.twitter_description.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let twitter_img_str = res.twitter_image.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+                        let twitter_card_str = res.twitter_card.clone().unwrap_or_default()
+                            .replace("\r\n", " ").replace('\n', " ");
+
                         let headings_str = res.headings.iter()
-                            .map(|h| format!("H{}: {}", h.level, h.text))
+                            .map(|h| {
+                                let cleaned_text = h.text.replace("\r\n", " ").replace('\n', " ");
+                                format!("H{}: {}", h.level, cleaned_text)
+                            })
                             .collect::<Vec<String>>()
                             .join(" | ");
                             
-                        let schema_str = res.schema_json_ld.join("\n");
-                        let schema_errors_str = res.schema_errors.join("\n");
-                        let markdown_str = res.markdown.clone().unwrap_or_default();
+                        let schema_str = res.schema_json_ld.join("\r\n");
+                        let schema_errors_str = res.schema_errors.join("\r\n");
+                        let markdown_str = res.markdown.clone().unwrap_or_default()
+                            .replace("\r\n", "\n")
+                            .replace('\n', "\r\n");
                         
-                        let inlinks_str = res.inlinks.join("\n");
-                        let outlinks_str = res.outlinks.join("\n");
+                        let inlinks_str = res.inlinks.join("\r\n");
+                        let outlinks_str = res.outlinks.join("\r\n");
                         
                         let images_str = res.images.iter()
                             .map(|img| {
                                 if let Some(ref alt) = img.alt {
-                                    format!("{} (alt: {})", img.src, alt)
+                                    let cleaned_alt = alt.replace("\r\n", " ").replace('\n', " ");
+                                    format!("{} (alt: {})", img.src, cleaned_alt)
                                 } else {
                                     img.src.clone()
                                 }
                             })
                             .collect::<Vec<String>>()
-                            .join("\n");
+                            .join("\r\n");
+
 
                         wtr.write_record(&[
                             res.url,
                             res.status_code.map(|c| c.to_string()).unwrap_or_default(),
-                            res.error_message.clone().unwrap_or_default(),
+                            error_msg_str,
                             res.indexable.to_string(),
                             res.indexability_status,
                             title_str,
                             title_len,
                             meta_str,
                             meta_len,
-                            res.h1.unwrap_or_default(),
+                            h1_str,
                             res.h1_count.to_string(),
-                            res.h2.unwrap_or_default(),
+                            h2_str,
                             res.h2_count.to_string(),
                             res.word_count.to_string(),
                             res.size_bytes.to_string(),
-                            res.canonical.unwrap_or_default(),
+                            canonical_str,
                             res.depth.to_string(),
                             res.response_time_ms.to_string(),
                             inlinks_str,
                             outlinks_str,
                             images_str,
-                            res.og_title.unwrap_or_default(),
-                            res.og_description.unwrap_or_default(),
-                            res.og_image.unwrap_or_default(),
-                            res.og_url.unwrap_or_default(),
-                            res.og_type.unwrap_or_default(),
-                            res.twitter_title.unwrap_or_default(),
-                            res.twitter_description.unwrap_or_default(),
-                            res.twitter_image.unwrap_or_default(),
-                            res.twitter_card.unwrap_or_default(),
+                            og_title_str,
+                            og_desc_str,
+                            og_img_str,
+                            og_url_str,
+                            og_type_str,
+                            twitter_title_str,
+                            twitter_desc_str,
+                            twitter_img_str,
+                            twitter_card_str,
                             schema_errors_str,
                             headings_str,
                             markdown_str,
                             schema_str,
                         ])?;
+
                     }
                 }
             }
