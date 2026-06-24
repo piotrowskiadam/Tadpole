@@ -113,6 +113,9 @@ jobs:
             mingw-w64-x86_64-libadwaita
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-vulkan-loader
+            mingw-w64-x86_64-librsvg
+            mingw-w64-x86_64-adwaita-icon-theme
+            mingw-w64-x86_64-hicolor-icon-theme
             zip
 
 
@@ -158,6 +161,29 @@ jobs:
           mkdir -p "$SCHEMA_DIR"
           cp /mingw64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
           cp /mingw64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
+
+          echo "=== Copying icon themes ==="
+          mkdir -p "$DIST_DIR/share/icons/Adwaita"
+          cp /mingw64/share/icons/Adwaita/index.theme "$DIST_DIR/share/icons/Adwaita/"
+          cp -r /mingw64/share/icons/Adwaita/scalable "$DIST_DIR/share/icons/Adwaita/"
+          mkdir -p "$DIST_DIR/share/icons/hicolor"
+          cp /mingw64/share/icons/hicolor/index.theme "$DIST_DIR/share/icons/hicolor/"
+          cp -r /mingw64/share/icons/hicolor/scalable "$DIST_DIR/share/icons/hicolor/"
+
+          echo "=== Copying gdk-pixbuf loaders ==="
+          mkdir -p "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          cp /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders/"
+          gdk-pixbuf-query-loaders | sed 's|[^"]*/lib/gdk-pixbuf-2.0/2.10.0/||g' > "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+
+          echo "=== Resolving and copying loader DLL dependencies ==="
+          loader_deps=$(ldd /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /mingw64/bin | awk '{print $3}')
+          for dll in $loader_deps; do
+              cp -n "$dll" "$DIST_DIR/"
+          done
+
+          echo "=== Creating GTK settings ==="
+          mkdir -p "$DIST_DIR/etc/gtk-4.0"
+          printf "[Settings]\ngtk-icon-theme-name=Adwaita\n" > "$DIST_DIR/etc/gtk-4.0/settings.ini"
 
           echo "=== Packaging into tadpole-windows.zip ==="
           cd dist

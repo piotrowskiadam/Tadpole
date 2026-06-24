@@ -1,6 +1,6 @@
 [package]
 name = "tadpole"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Tadpole — a local SEO crawler and site auditing tool"
 license = "MIT"
@@ -41,4 +41,8 @@ assets = [
     { source = "tadpolelogonobg.png", dest = "/usr/share/pixmaps/com.tadpole.seo.png", mode = "644" },
     { source = "snap/gui/com.tadpole.seo.desktop", dest = "/usr/share/applications/com.tadpole.seo.desktop", mode = "644" }
 ]
+
+[build-dependencies]
+winres = "0.1.12"
+
 

@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod state;
 mod crawler;
 mod ui;
@@ -7,6 +9,17 @@ use adw::prelude::*;
 use ui::window::MainWindow;
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(mut exe_path) = std::env::current_exe() {
+            exe_path.pop();
+            let loaders_cache = exe_path.join("lib/gdk-pixbuf-2.0/2.10.0/loaders.cache");
+            if loaders_cache.exists() {
+                std::env::set_var("GDK_PIXBUF_MODULE_FILE", loaders_cache);
+            }
+        }
+    }
+
     // 1. Initialize Tokio multi-threaded runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -9,6 +9,9 @@ pacman -S --noconfirm --needed \
     mingw-w64-x86_64-pkg-config \
     mingw-w64-x86_64-unzip \
     mingw-w64-x86_64-vulkan-loader \
+    mingw-w64-x86_64-librsvg \
+    mingw-w64-x86_64-adwaita-icon-theme \
+    mingw-w64-x86_64-hicolor-icon-theme \
     git \
     zip
 
@@ -58,6 +61,36 @@ SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
 mkdir -p "$SCHEMA_DIR"
 cp /mingw64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
 cp /mingw64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
+
+# Copy icon themes (Adwaita and hicolor)
+echo "=== Copying icon themes ==="
+mkdir -p "$DIST_DIR/share/icons/Adwaita"
+cp /mingw64/share/icons/Adwaita/index.theme "$DIST_DIR/share/icons/Adwaita/"
+cp -r /mingw64/share/icons/Adwaita/scalable "$DIST_DIR/share/icons/Adwaita/"
+mkdir -p "$DIST_DIR/share/icons/hicolor"
+cp /mingw64/share/icons/hicolor/index.theme "$DIST_DIR/share/icons/hicolor/"
+cp -r /mingw64/share/icons/hicolor/scalable "$DIST_DIR/share/icons/hicolor/"
+
+# Copy gdk-pixbuf SVG loaders
+echo "=== Copying gdk-pixbuf loaders ==="
+mkdir -p "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+cp /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders/"
+gdk-pixbuf-query-loaders | sed 's|[^"]*/lib/gdk-pixbuf-2.0/2.10.0/||g' > "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+
+# Copy dynamic dependency DLLs for loaders (like librsvg-2-2.dll etc.)
+echo "=== Resolving and copying loader DLL dependencies ==="
+loader_deps=$(ldd /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /mingw64/bin | awk '{print $3}')
+for dll in $loader_deps; do
+    cp -n "$dll" "$DIST_DIR/"
+done
+
+# Write GTK settings for default icon theme
+echo "=== Creating GTK settings ==="
+mkdir -p "$DIST_DIR/etc/gtk-4.0"
+cat << 'EOF' > "$DIST_DIR/etc/gtk-4.0/settings.ini"
+[Settings]
+gtk-icon-theme-name=Adwaita
+EOF
 
 # Zip the release
 echo "=== Packaging into tadpole-windows.zip ==="
