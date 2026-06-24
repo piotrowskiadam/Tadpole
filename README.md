@@ -14,6 +14,8 @@ You can download the latest pre-compiled binaries and installers for all support
 
 Tadpole release assets are built and published automatically for the following formats:
 
+[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/tadpole)
+
 | OS | Format | Type | Installation / Run Command |
 | :--- | :--- | :--- | :--- |
 | **Linux** | **AppImage** (`.AppImage`) | Portable Standalone Binary | `chmod +x Tadpole-*.AppImage && ./Tadpole-*.AppImage` |
