@@ -1,6 +1,7 @@
 mod state;
 mod crawler;
 mod ui;
+mod markdown;
 
 use adw::prelude::*;
 use ui::window::MainWindow;

@@ -50,6 +50,7 @@ pub struct CrawlResult {
     pub schema_errors: Vec<String>,
     /// All headings H1–H6 in document order
     pub headings: Vec<HeadingEntry>,
+    pub markdown: Option<String>,
 }
 
 impl CrawlResult {
@@ -93,6 +94,7 @@ impl CrawlResult {
             schema_json_ld: vec![],
             schema_errors: vec![],
             headings: vec![],
+            markdown: None,
         }
     }
 }
@@ -139,6 +141,15 @@ pub struct CrawlConfig {
     // Advanced/Mode settings
     pub crawl_mode: CrawlMode,
     pub max_depth: Option<usize>,
+
+    // Markdown/Scraping settings
+    pub md_only_main_content: bool,
+    pub md_ignored_selectors: String,
+    pub md_keep_links: bool,
+    pub md_ignore_images: bool,
+    pub md_clean_whitespace: bool,
+    pub md_output_dir: Option<String>,
+    pub md_auto_generate: bool,
 }
 
 impl Default for CrawlConfig {
@@ -159,6 +170,13 @@ impl Default for CrawlConfig {
             project_dir: None,
             crawl_mode: CrawlMode::Crawl,
             max_depth: None,
+            md_only_main_content: true,
+            md_ignored_selectors: "".to_string(),
+            md_keep_links: true,
+            md_ignore_images: false,
+            md_clean_whitespace: true,
+            md_output_dir: None,
+            md_auto_generate: false,
         }
     }
 }

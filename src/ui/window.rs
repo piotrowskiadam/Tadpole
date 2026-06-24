@@ -91,11 +91,63 @@ impl MainWindow {
             .build();
         header_bar.pack_end(&pref_button);
 
-        let export_button = gtk::Button::builder()
+        let export_menu_button = gtk::MenuButton::builder()
             .icon_name("folder-download-symbolic")
-            .tooltip_text("Export filtered URLs to CSV")
+            .tooltip_text("Export Options")
             .build();
-        header_bar.pack_end(&export_button);
+        header_bar.pack_end(&export_menu_button);
+
+        let export_popover = gtk::Popover::new();
+        let popover_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        popover_box.set_margin_start(6);
+        popover_box.set_margin_end(6);
+        popover_box.set_margin_top(6);
+        popover_box.set_margin_bottom(6);
+
+        let csv_btn = gtk::Button::builder()
+            .css_classes(vec!["flat".to_string()])
+            .halign(gtk::Align::Fill)
+            .build();
+        let csv_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        csv_box.set_halign(gtk::Align::Start);
+        let csv_bytes = include_bytes!("../../csv_icon.png");
+        let csv_gbytes = glib::Bytes::from(&csv_bytes[..]);
+        if let Ok(texture) = gdk::Texture::from_bytes(&csv_gbytes) {
+            let csv_img = gtk::Image::builder()
+                .pixel_size(16)
+                .valign(gtk::Align::Center)
+                .build();
+            csv_img.set_paintable(Some(&texture));
+            csv_box.append(&csv_img);
+        }
+        let csv_lbl = gtk::Label::new(Some("CSV"));
+        csv_box.append(&csv_lbl);
+        csv_btn.set_child(Some(&csv_box));
+
+        let md_btn = gtk::Button::builder()
+            .css_classes(vec!["flat".to_string()])
+            .halign(gtk::Align::Fill)
+            .build();
+        let md_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        md_box.set_halign(gtk::Align::Start);
+        let md_bytes = include_bytes!("../../markdown_icon.png");
+        let md_gbytes = glib::Bytes::from(&md_bytes[..]);
+        if let Ok(texture) = gdk::Texture::from_bytes(&md_gbytes) {
+            let md_img = gtk::Image::builder()
+                .pixel_size(16)
+                .valign(gtk::Align::Center)
+                .build();
+            md_img.set_paintable(Some(&texture));
+            md_box.append(&md_img);
+        }
+        let md_lbl = gtk::Label::new(Some("Markdown"));
+        md_box.append(&md_lbl);
+        md_btn.set_child(Some(&md_box));
+
+        popover_box.append(&csv_btn);
+        popover_box.append(&md_btn);
+        export_popover.set_child(Some(&popover_box));
+        export_menu_button.set_popover(Some(&export_popover));
 
 
         // Address entry in header bar
@@ -240,7 +292,7 @@ impl MainWindow {
         main_window.address_entry.set_visible(!is_list);
         main_window.edit_list_button.set_visible(is_list);
 
-        main_window.setup_events(open_button, save_button, pref_button, export_button, search_entry);
+        main_window.setup_events(open_button, save_button, pref_button, csv_btn, md_btn, export_popover, search_entry);
 
         main_window
     }
@@ -254,7 +306,9 @@ impl MainWindow {
         open_button: gtk::Button, 
         save_button: gtk::Button, 
         pref_button: gtk::Button, 
-        export_button: gtk::Button,
+        csv_btn: gtk::Button,
+        md_btn: gtk::Button,
+        export_popover: gtk::Popover,
         search_entry: gtk::SearchEntry,
     ) {
         let state = self.state.clone();
@@ -849,6 +903,53 @@ impl MainWindow {
             page_ai.add(&group_ai);
             pref_window.add(&page_ai);
 
+            // Markdown Settings Page
+            let page_markdown = adw::PreferencesPage::builder()
+                .title("Markdown Exporter")
+                .icon_name("document-send-symbolic")
+                .build();
+
+            let group_scraping = adw::PreferencesGroup::builder()
+                .title("Scraping and Conversion")
+                .build();
+
+            let only_main_row = adw::SwitchRow::builder()
+                .title("Main content only")
+                .subtitle("Ignore header, footer, navigation and sidebars")
+                .active(config.md_only_main_content)
+                .build();
+            group_scraping.add(&only_main_row);
+
+            let ignored_selectors_row = adw::EntryRow::builder()
+                .title("Ignored CSS selectors (e.g. .ads, #comments)")
+                .text(&config.md_ignored_selectors)
+                .build();
+            group_scraping.add(&ignored_selectors_row);
+
+            let keep_links_row = adw::SwitchRow::builder()
+                .title("Preserve links in text")
+                .subtitle("Convert anchors to markdown links [text](url)")
+                .active(config.md_keep_links)
+                .build();
+            group_scraping.add(&keep_links_row);
+
+            let ignore_images_row = adw::SwitchRow::builder()
+                .title("Ignore images")
+                .subtitle("Skip images in the generated markdown output")
+                .active(config.md_ignore_images)
+                .build();
+            group_scraping.add(&ignore_images_row);
+
+            let clean_whitespace_row = adw::SwitchRow::builder()
+                .title("Clean redundant blank lines")
+                .subtitle("Normalize multiple consecutive blank lines")
+                .active(config.md_clean_whitespace)
+                .build();
+            group_scraping.add(&clean_whitespace_row);
+
+            page_markdown.add(&group_scraping);
+            pref_window.add(&page_markdown);
+
             // Save settings on close
             let state_save = state_pref.clone();
             let model_dropdown_save = model_dropdown.clone();
@@ -887,6 +988,12 @@ impl MainWindow {
                 let max_depth_val = max_depth_row.value() as usize;
                 let max_depth = if max_depth_val == 0 { None } else { Some(max_depth_val) };
 
+                let md_only_main = only_main_row.is_active();
+                let md_ignored_sel = ignored_selectors_row.text().to_string();
+                let md_keep_links = keep_links_row.is_active();
+                let md_ignore_img = ignore_images_row.is_active();
+                let md_clean_ws = clean_whitespace_row.is_active();
+
                 let new_config = CrawlConfig {
                     max_urls: max_urls_row.value() as usize,
                     max_concurrency: concurrency_row.value() as usize,
@@ -903,6 +1010,13 @@ impl MainWindow {
                     project_dir: current_config.project_dir, // Preserve
                     crawl_mode: current_config.crawl_mode, // Preserve
                     max_depth,
+                    md_only_main_content: md_only_main,
+                    md_ignored_selectors: md_ignored_sel,
+                    md_keep_links,
+                    md_ignore_images: md_ignore_img,
+                    md_clean_whitespace: md_clean_ws,
+                    md_output_dir: current_config.md_output_dir, // Preserve
+                    md_auto_generate: current_config.md_auto_generate, // Preserve
                 };
                 state_save.set_config(new_config);
             });
@@ -913,7 +1027,9 @@ impl MainWindow {
         // Export CSV click
         let table_export = table.clone();
         let parent_win_export = main_window_widget.clone();
-        export_button.connect_clicked(move |_| {
+        let export_popover_csv = export_popover.clone();
+        csv_btn.connect_clicked(move |_| {
+            export_popover_csv.popdown();
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Export crawl to CSV");
             dialog.set_initial_name(Some("crawl_results.csv"));
@@ -930,6 +1046,53 @@ impl MainWindow {
                     if let Some(path) = file.path() {
                         if let Err(e) = table_inner.export_to_csv(&path) {
                             eprintln!("Failed to export CSV: {}", e);
+                        }
+                    }
+                }
+            });
+        });
+
+        // Export Markdown click
+        let state_md = state.clone();
+        let parent_win_md = main_window_widget.clone();
+        let export_popover_md = export_popover.clone();
+        let status_label_md = status_label.clone();
+        md_btn.connect_clicked(move |_| {
+            export_popover_md.popdown();
+            let dialog = gtk::FileDialog::new();
+            dialog.set_title("Select Export Directory for Markdown Files");
+
+            let state_inner = state_md.clone();
+            let status_label_inner = status_label_md.clone();
+            dialog.select_folder(Some(&parent_win_md), None::<&gio::Cancellable>, move |result| {
+                if let Ok(file) = result {
+                    if let Some(path) = file.path() {
+                        let results = state_inner.get_all_results();
+                        let mut success_count = 0;
+                        let mut error_count = 0;
+                        for res in results {
+                            if let Some(ref md_content) = res.markdown {
+                                let filename = crate::crawler::get_slug_filename(&res.url);
+                                let dest_path = path.join(format!("{}.md", filename));
+                                match std::fs::write(&dest_path, md_content) {
+                                    Ok(_) => success_count += 1,
+                                    Err(e) => {
+                                        eprintln!("Failed to write markdown file to {:?}: {}", dest_path, e);
+                                        error_count += 1;
+                                    }
+                                }
+                            }
+                        }
+                        if error_count > 0 {
+                            status_label_inner.set_text(&format!(
+                                "Exported {} Markdown files ({} errors).",
+                                success_count, error_count
+                            ));
+                        } else {
+                            status_label_inner.set_text(&format!(
+                                "Successfully exported {} Markdown files.",
+                                success_count
+                            ));
                         }
                     }
                 }

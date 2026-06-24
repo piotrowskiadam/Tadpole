@@ -51,6 +51,11 @@ pub struct Details {
     schema_errors_list: gtk::ListBox,
     schema_raw_text: gtk::TextView,
 
+    // Markdown Tab widgets
+    md_text_view: gtk::TextView,
+    md_copy_btn: gtk::Button,
+    md_save_btn: gtk::Button,
+
     // Callbacks & active data
     on_url_clicked: Rc<RefCell<Option<Box<dyn Fn(String)>>>>,
     active_url: Rc<RefCell<Option<String>>>,
@@ -640,6 +645,115 @@ impl Details {
             }
         });
 
+        // --- Tab 7: Markdown Preview ---
+        let md_outer_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        
+        let md_toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        md_toolbar.set_margin_start(10);
+        md_toolbar.set_margin_end(10);
+        md_toolbar.set_margin_top(6);
+        md_toolbar.set_margin_bottom(6);
+        
+        let md_desc = gtk::Label::new(Some("Scraped subpage content in Markdown format"));
+        md_desc.add_css_class("dim-label");
+        md_desc.set_halign(gtk::Align::Start);
+        md_desc.set_hexpand(true);
+        md_toolbar.append(&md_desc);
+        
+        let md_copy_btn = gtk::Button::builder()
+            .label("Copy to Clipboard")
+            .icon_name("edit-copy-symbolic")
+            .tooltip_text("Copy markdown content to clipboard")
+            .sensitive(false)
+            .build();
+        md_toolbar.append(&md_copy_btn);
+        
+        let md_save_btn = gtk::Button::builder()
+            .label("Save as...")
+            .icon_name("document-save-symbolic")
+            .tooltip_text("Save markdown to file")
+            .sensitive(false)
+            .build();
+        md_toolbar.append(&md_save_btn);
+        
+        md_outer_box.append(&md_toolbar);
+        
+        let md_scroll = gtk::ScrolledWindow::new();
+        md_scroll.set_vexpand(true);
+        md_scroll.set_hexpand(true);
+        
+        let md_text_view = gtk::TextView::new();
+        md_text_view.set_editable(false);
+        md_text_view.set_monospace(true);
+        md_text_view.set_margin_start(10);
+        md_text_view.set_margin_end(10);
+        md_text_view.set_margin_top(6);
+        md_text_view.set_margin_bottom(6);
+        md_scroll.set_child(Some(&md_text_view));
+        md_outer_box.append(&md_scroll);
+        
+        notebook.append_page(&md_outer_box, Some(&gtk::Label::new(Some("Markdown"))));
+
+        // Copy button — copies current raw text buffer content to clipboard
+        let md_text_view_copy = md_text_view.clone();
+        let md_copy_btn_clone = md_copy_btn.clone();
+        md_copy_btn.connect_clicked(move |_| {
+            let buf = md_text_view_copy.buffer();
+            let text = buf.text(&buf.start_iter(), &buf.end_iter(), false);
+            if !text.is_empty() {
+                let display = gdk::Display::default().expect("Could not get GDK display");
+                let clipboard = display.clipboard();
+                clipboard.set_text(&text);
+                
+                md_copy_btn_clone.set_label("Copied!");
+                md_copy_btn_clone.set_icon_name("emblem-ok-symbolic");
+                let btn_reset = md_copy_btn_clone.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
+                    btn_reset.set_label("Copy to Clipboard");
+                    btn_reset.set_icon_name("edit-copy-symbolic");
+                });
+            }
+        });
+
+        // Save button
+        let md_text_view_save = md_text_view.clone();
+        let active_url_save = active_url.clone();
+        let notebook_weak = notebook.downgrade();
+        md_save_btn.connect_clicked(move |_| {
+            let buf = md_text_view_save.buffer();
+            let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string();
+            if !text.is_empty() {
+                let dialog = gtk::FileDialog::new();
+                dialog.set_title("Save Markdown File");
+                
+                let default_name = if let Some(ref url) = *active_url_save.borrow() {
+                    format!("{}.md", crate::crawler::get_slug_filename(url))
+                } else {
+                    "content.md".to_string()
+                };
+                dialog.set_initial_name(Some(&default_name));
+                
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("Markdown Files"));
+                filter.add_pattern("*.md");
+                let filters = gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+                
+                let root_window = notebook_weak.upgrade()
+                    .and_then(|nb| nb.root())
+                    .and_downcast::<gtk::Window>();
+                
+                dialog.save(root_window.as_ref(), None::<&gio::Cancellable>, move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            let _ = std::fs::write(path, text);
+                        }
+                    }
+                });
+            }
+        });
+
         Self {
             notebook,
             val_url,
@@ -673,6 +787,9 @@ impl Details {
             schema_list,
             schema_errors_list,
             schema_raw_text,
+            md_text_view,
+            md_copy_btn,
+            md_save_btn,
             on_url_clicked,
             active_url,
             crawl_state,
@@ -725,6 +842,9 @@ impl Details {
         self.clear_list_box(&self.schema_list);
         self.clear_list_box(&self.schema_errors_list);
         self.schema_raw_text.buffer().set_text("");
+        self.md_text_view.buffer().set_text("");
+        self.md_copy_btn.set_sensitive(false);
+        self.md_save_btn.set_sensitive(false);
     }
 
     pub fn update(&self, url: &str, state: &CrawlState) {
@@ -1058,6 +1178,17 @@ impl Details {
                     list_row.set_selectable(false);
                     self.schema_errors_list.append(&list_row);
                 }
+            }
+
+            // Markdown Preview Update
+            if let Some(ref md_content) = res.markdown {
+                self.md_text_view.buffer().set_text(md_content);
+                self.md_copy_btn.set_sensitive(true);
+                self.md_save_btn.set_sensitive(true);
+            } else {
+                self.md_text_view.buffer().set_text("");
+                self.md_copy_btn.set_sensitive(false);
+                self.md_save_btn.set_sensitive(false);
             }
         } else {
             eprintln!("[Details Update] NO CrawlResult found in state for URL: {}", url);

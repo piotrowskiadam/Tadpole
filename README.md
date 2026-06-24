@@ -64,6 +64,21 @@ Tadpole release assets are automatically built and published for the following p
 - **Optimized Suggestions**: Integrates with OpenAI and OpenRouter to analyze page content and suggest optimized metadata.
 - **Dynamic Model Selector**: Dropdown selection displaying active provider models with a background refresh mechanism, search/filter entry, and custom model inputs.
 
+### 9. Markdown Scraping & Exporter
+- **Page Content Conversion**: Extracts core article/body text (filtering headers, footers, navigation, sidebars, and custom CSS selectors) and converts it to clean GitHub Flavored Markdown (GFM).
+- **Tab Preview**: Shows a monospace preview of the page's Markdown content under the details panel, with options to copy to clipboard or save to a file.
+- **Batch Directory Export**: Click the export dropdown in the header bar to export all crawled pages to a selected folder as separate `<slug>.md` files.
+
+### 10. Comprehensive SEO CSV Audit
+- **34 Columns of Data**: Export complete details for every single crawled page, including:
+  - Meta titles and descriptions, along with their character lengths.
+  - All internal links pointing to a page (`Inlinks`) and all links pointing outward (`Outlinks`).
+  - Image paths paired with their `alt` text.
+  - Social sharing (Open Graph and Twitter) tags.
+  - A formatted tree of headings in document order (e.g., `H1: text | H2: text`).
+  - Merged raw JSON-LD schemas and schema validation errors.
+  - Word count, response times, sizes, depths, indexability status, and canonical URLs.
+
 ---
 
 ## System Requirements

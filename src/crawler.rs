@@ -375,6 +375,7 @@ impl Crawler {
         let mut schema_json_ld = vec![];
         let mut schema_errors = vec![];
         let mut headings: Vec<HeadingEntry> = vec![];
+        let mut markdown_content = None;
 
         if is_html && (status.is_success() || status_code == 200) {
             if let Ok(bytes) = response.bytes().await {
@@ -488,6 +489,9 @@ impl Crawler {
                         }
                     }
                 }
+                
+                let md = crate::markdown::html_to_markdown(&html_str, config);
+                markdown_content = Some(md);
             }
         } else if !status.is_success() {
             indexable = false;
@@ -526,8 +530,50 @@ impl Crawler {
             schema_json_ld,
             schema_errors,
             headings,
+            markdown: markdown_content,
         }
     }
+}
+
+pub fn get_slug_filename(url_str: &str) -> String {
+    if let Ok(parsed) = url::Url::parse(url_str) {
+        let path = parsed.path().trim_matches('/');
+        if path.is_empty() {
+            return "index".to_string();
+        }
+        
+        if let Some(last_segment) = path.split('/').last() {
+            let segment_no_ext = if let Some(idx) = last_segment.rfind('.') {
+                if idx > 0 {
+                    &last_segment[..idx]
+                } else {
+                    last_segment
+                }
+            } else {
+                last_segment
+            };
+            
+            if segment_no_ext.is_empty() {
+                return "index".to_string();
+            }
+            
+            let mut slug = String::new();
+            for c in segment_no_ext.chars() {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    slug.push(c.to_ascii_lowercase());
+                } else {
+                    slug.push('-');
+                }
+            }
+            return slug;
+        }
+    }
+    
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    url_str.hash(&mut hasher);
+    format!("page_{}", hasher.finish())
 }
 
 fn parse_robots_txt(content: &str, user_agent: &str) -> Vec<String> {

@@ -301,10 +301,15 @@ impl Table {
         let file = std::fs::File::create(filepath)?;
         let mut wtr = csv::Writer::from_writer(file);
         
-        // Headers matching details
+        // Headers matching details and containing Markdown details
         wtr.write_record(&[
-            "Address", "Status Code", "Indexability", "Title", "Meta Description",
-            "H1", "H1 Count", "H2", "H2 Count", "Word Count", "Size (Bytes)", "Canonical"
+            "Address", "Status Code", "Error Message", "Indexable", "Indexability",
+            "Title", "Title Length", "Meta Description", "Meta Length",
+            "H1", "H1 Count", "H2", "H2 Count", "Word Count", "Size (Bytes)", "Canonical",
+            "Depth", "Response Time (ms)", "Inlinks", "Outlinks", "Images",
+            "OG Title", "OG Description", "OG Image", "OG URL", "OG Type",
+            "Twitter Title", "Twitter Description", "Twitter Image", "Twitter Card",
+            "Schema Errors", "Headings", "Markdown", "Schema"
         ])?;
         
         let n = self.filter_model.n_items();
@@ -312,12 +317,44 @@ impl Table {
             if let Some(item) = self.filter_model.item(i) {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
                     if let Some(res) = row_data.get_result() {
+                        let title_str = res.title.clone().unwrap_or_default();
+                        let title_len = title_str.chars().count().to_string();
+                        let meta_str = res.meta_desc.clone().unwrap_or_default();
+                        let meta_len = meta_str.chars().count().to_string();
+                        
+                        let headings_str = res.headings.iter()
+                            .map(|h| format!("H{}: {}", h.level, h.text))
+                            .collect::<Vec<String>>()
+                            .join(" | ");
+                            
+                        let schema_str = res.schema_json_ld.join("\n");
+                        let schema_errors_str = res.schema_errors.join("\n");
+                        let markdown_str = res.markdown.clone().unwrap_or_default();
+                        
+                        let inlinks_str = res.inlinks.join("\n");
+                        let outlinks_str = res.outlinks.join("\n");
+                        
+                        let images_str = res.images.iter()
+                            .map(|img| {
+                                if let Some(ref alt) = img.alt {
+                                    format!("{} (alt: {})", img.src, alt)
+                                } else {
+                                    img.src.clone()
+                                }
+                            })
+                            .collect::<Vec<String>>()
+                            .join("\n");
+
                         wtr.write_record(&[
                             res.url,
                             res.status_code.map(|c| c.to_string()).unwrap_or_default(),
+                            res.error_message.clone().unwrap_or_default(),
+                            res.indexable.to_string(),
                             res.indexability_status,
-                            res.title.unwrap_or_default(),
-                            res.meta_desc.unwrap_or_default(),
+                            title_str,
+                            title_len,
+                            meta_str,
+                            meta_len,
                             res.h1.unwrap_or_default(),
                             res.h1_count.to_string(),
                             res.h2.unwrap_or_default(),
@@ -325,6 +362,24 @@ impl Table {
                             res.word_count.to_string(),
                             res.size_bytes.to_string(),
                             res.canonical.unwrap_or_default(),
+                            res.depth.to_string(),
+                            res.response_time_ms.to_string(),
+                            inlinks_str,
+                            outlinks_str,
+                            images_str,
+                            res.og_title.unwrap_or_default(),
+                            res.og_description.unwrap_or_default(),
+                            res.og_image.unwrap_or_default(),
+                            res.og_url.unwrap_or_default(),
+                            res.og_type.unwrap_or_default(),
+                            res.twitter_title.unwrap_or_default(),
+                            res.twitter_description.unwrap_or_default(),
+                            res.twitter_image.unwrap_or_default(),
+                            res.twitter_card.unwrap_or_default(),
+                            schema_errors_str,
+                            headings_str,
+                            markdown_str,
+                            schema_str,
                         ])?;
                     }
                 }
