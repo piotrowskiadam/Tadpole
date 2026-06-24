@@ -52,7 +52,7 @@ fn main() {
                 "[Desktop Entry]\n\
                  Name=Tadpole\n\
                  Comment=Local SEO crawler and auditor\n\
-                 Exec={}\n\
+                 Exec=\"{}\"\n\
                  Icon=com.tadpole.seo\n\
                  Terminal=false\n\
                  Type=Application\n\
