@@ -4,6 +4,10 @@ Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/
 
 <img src="tadpolelogonobg.png" alt="Tadpole Logo" width="160">
 
+## Preview
+
+![Tadpole Crawl in Progress](CrawlInProgressScreenshot.png)
+
 ---
 
 ## Download
