@@ -16,8 +16,47 @@ fn main() {
     // 2. Enter Tokio runtime context so any tokio::spawn calls from GTK run inside this runtime
     let _guard = rt.enter();
 
-    // 3. Write application icon to a temporary directory so GtkIconTheme can find it at runtime
-    // even when running uninstalled (e.g. during development with cargo run or AppImage)
+    // 3. Write application icon and desktop launcher to user local directories so GNOME Shell can associate
+    // the running window (app_id: com.tadpole.seo) with the desktop launcher and display "Tadpole" and its icon in the Dash.
+    if let Ok(home) = std::env::var("HOME") {
+        let icon_bytes = include_bytes!("../tadpolelogonobg.png");
+
+        // Copy icon to user's local icons (standard theme path)
+        let local_icons = std::path::PathBuf::from(&home).join(".local/share/icons/hicolor/256x256/apps");
+        if std::fs::create_dir_all(&local_icons).is_ok() {
+            let _ = std::fs::write(local_icons.join("com.tadpole.seo.png"), icon_bytes);
+        }
+
+        // Copy icon to user's local pixmaps (fallback search path)
+        let local_pixmaps = std::path::PathBuf::from(&home).join(".local/share/pixmaps");
+        if std::fs::create_dir_all(&local_pixmaps).is_ok() {
+            let _ = std::fs::write(local_pixmaps.join("com.tadpole.seo.png"), icon_bytes);
+        }
+
+        // Create user local desktop entry
+        let local_apps = std::path::PathBuf::from(&home).join(".local/share/applications");
+        if std::fs::create_dir_all(&local_apps).is_ok() {
+            let exec_path = std::env::current_exe()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "tadpole".to_string());
+
+            let desktop_content = format!(
+                "[Desktop Entry]\n\
+                 Name=Tadpole\n\
+                 Comment=Local SEO crawler and auditor\n\
+                 Exec={}\n\
+                 Icon=com.tadpole.seo\n\
+                 Terminal=false\n\
+                 Type=Application\n\
+                 Categories=Development;WebDevelopment;\n\
+                 StartupWMClass=com.tadpole.seo\n",
+                 exec_path
+            );
+            let _ = std::fs::write(local_apps.join("com.tadpole.seo.desktop"), desktop_content);
+        }
+    }
+
+    // Write to /tmp/tadpole-icons as fallback for theme path
     let temp_icon_dir = std::env::temp_dir().join("tadpole-icons");
     if std::fs::create_dir_all(&temp_icon_dir).is_ok() {
         let icon_bytes = include_bytes!("../tadpolelogonobg.png");
