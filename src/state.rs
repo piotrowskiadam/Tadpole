@@ -126,6 +126,7 @@ pub struct CrawlConfig {
     pub respect_robots: bool,
     pub follow_redirects: bool,
     pub js_rendering: bool,
+    pub extract_microdata: bool,
     pub include_regex: Option<String>,
     pub exclude_regex: Option<String>,
     
@@ -161,6 +162,7 @@ impl Default for CrawlConfig {
             respect_robots: true,
             follow_redirects: true,
             js_rendering: false,
+            extract_microdata: false,
             include_regex: None,
             exclude_regex: None,
             ai_provider: "OpenAI".to_string(),

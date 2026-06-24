@@ -397,7 +397,7 @@ impl Crawler {
                     }
                 }
 
-                let mut parsed = parse_html(url_str, &html_str, base_domain);
+                let mut parsed = parse_html(url_str, &html_str, base_domain, &config);
 
                 // Download images locally if configured
                 if config.download_images {
@@ -680,7 +680,7 @@ pub struct ParsedData {
     pub headings: Vec<HeadingEntry>,
 }
 
-pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str) -> ParsedData {
+pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &CrawlConfig) -> ParsedData {
     let parsed_url = Url::parse(url_str).unwrap();
     let document = Html::parse_document(html_str);
 
@@ -883,6 +883,14 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str) -> ParsedDat
         }
     }
 
+    // Extract Microdata if configured
+    if config.extract_microdata {
+        let microdata_schemas = parse_microdata_items(&document);
+        for m_schema in microdata_schemas {
+            schema_json_ld.push(m_schema);
+        }
+    }
+
     ParsedData {
         title,
         meta_desc,
@@ -908,6 +916,104 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str) -> ParsedDat
         schema_json_ld,
         schema_errors,
         headings,
+    }
+}
+
+fn parse_microdata_items(document: &Html) -> Vec<String> {
+    let mut items = vec![];
+    let itemscope_sel = match Selector::parse("[itemscope]") {
+        Ok(sel) => sel,
+        Err(_) => return items,
+    };
+    
+    for el in document.select(&itemscope_sel) {
+        let is_top_level = el.ancestors()
+            .filter_map(scraper::ElementRef::wrap)
+            .all(|anc| anc.value().attr("itemscope").is_none());
+            
+        if is_top_level {
+            let val = parse_itemscope(el);
+            if !val.is_null() {
+                if let Ok(json_str) = serde_json::to_string_pretty(&val) {
+                    items.push(json_str);
+                }
+            }
+        }
+    }
+    
+    items
+}
+
+fn parse_itemscope(element: scraper::ElementRef) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    
+    map.insert("@context".to_string(), serde_json::Value::String("https://schema.org".to_string()));
+    
+    if let Some(itemtype) = element.value().attr("itemtype") {
+        let clean_type = itemtype
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("schema.org/");
+        map.insert("@type".to_string(), serde_json::Value::String(clean_type.to_string()));
+    } else {
+        map.insert("@type".to_string(), serde_json::Value::String("Thing".to_string()));
+    }
+    
+    parse_properties(element, &mut map);
+    
+    serde_json::Value::Object(map)
+}
+
+fn parse_properties(element: scraper::ElementRef, map: &mut serde_json::Map<String, serde_json::Value>) {
+    for child in element.children() {
+        if let Some(child_el) = scraper::ElementRef::wrap(child) {
+            if let Some(itemprop_attr) = child_el.value().attr("itemprop") {
+                let prop_name = itemprop_attr.to_string();
+                
+                let val = if child_el.value().attr("itemscope").is_some() {
+                    parse_itemscope(child_el)
+                } else {
+                    let text_val = get_microdata_value(child_el);
+                    serde_json::Value::String(text_val)
+                };
+                
+                match map.get_mut(&prop_name) {
+                    Some(serde_json::Value::Array(arr)) => {
+                        arr.push(val);
+                    }
+                    Some(existing_val) => {
+                        let taken = existing_val.take();
+                        map.insert(prop_name, serde_json::Value::Array(vec![taken, val]));
+                    }
+                    None => {
+                        map.insert(prop_name, val);
+                    }
+                }
+                
+                if child_el.value().attr("itemscope").is_none() {
+                    parse_properties(child_el, map);
+                }
+            } else {
+                if child_el.value().attr("itemscope").is_none() {
+                    parse_properties(child_el, map);
+                }
+            }
+        }
+    }
+}
+
+fn get_microdata_value(element: scraper::ElementRef) -> String {
+    let tag = element.value().name();
+    match tag {
+        "meta" => element.value().attr("content").unwrap_or("").to_string(),
+        "audio" | "embed" | "iframe" | "img" | "source" | "track" | "video" => {
+            element.value().attr("src").unwrap_or("").to_string()
+        }
+        "a" | "area" | "link" => element.value().attr("href").unwrap_or("").to_string(),
+        "object" => element.value().attr("data").unwrap_or("").to_string(),
+        "data" | "meter" => element.value().attr("value").unwrap_or("").to_string(),
+        "time" => element.value().attr("datetime").unwrap_or("").to_string(),
+        _ => element.text().collect::<Vec<_>>().join(" ").trim().to_string(),
     }
 }
 
@@ -939,7 +1045,7 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com");
+        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
 
         assert_eq!(parsed.title, Some("Test Page Title".to_string()));
         assert_eq!(parsed.meta_desc, Some("This is a test meta description for SEO auditing.".to_string()));
@@ -1017,7 +1123,7 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com");
+        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
 
         assert_eq!(parsed.og_title, Some("Facebook OG Title".to_string()));
         assert_eq!(parsed.og_description, Some("This is an OG description".to_string()));
@@ -1085,7 +1191,7 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com");
+        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
 
         assert_eq!(parsed.schema_json_ld.len(), 3);
         assert!(parsed.schema_errors.iter().any(|e| e.contains("Missing '@context' property")));
@@ -1156,5 +1262,36 @@ mod tests {
         let res_2 = state.get_result("https://example.com/target").unwrap();
         assert!(res_2.inlinks.contains(&"https://example.com/source-1".to_string()));
         assert!(res_2.inlinks.contains(&"https://example.com/source-2".to_string()));
+    }
+
+    #[test]
+    fn test_parse_microdata_basic() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <body>
+                <div itemscope itemtype="https://schema.org/Product">
+                    <span itemprop="name">Dyson V8 Absolute</span>
+                    <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+                        <span itemprop="price">299.99</span>
+                        <meta itemprop="priceCurrency" content="USD" />
+                    </div>
+                </div>
+            </body>
+            </html>
+        "#;
+
+        let mut config = CrawlConfig::default();
+        config.extract_microdata = true;
+
+        let parsed = parse_html("https://example.com/page", html, "example.com", &config);
+
+        assert_eq!(parsed.schema_json_ld.len(), 1);
+        let parsed_json: serde_json::Value = serde_json::from_str(&parsed.schema_json_ld[0]).unwrap();
+        assert_eq!(parsed_json["@type"], "Product");
+        assert_eq!(parsed_json["name"], "Dyson V8 Absolute");
+        assert_eq!(parsed_json["offers"]["@type"], "Offer");
+        assert_eq!(parsed_json["offers"]["price"], "299.99");
+        assert_eq!(parsed_json["offers"]["priceCurrency"], "USD");
     }
 }

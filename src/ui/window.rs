@@ -570,6 +570,13 @@ impl MainWindow {
                 .build();
             group_behavior.add(&js_rendering_row);
 
+            let extract_microdata_row = adw::SwitchRow::builder()
+                .title("Extract Microdata")
+                .subtitle("Extracts inline HTML Microdata and converts it to JSON-LD")
+                .active(config.extract_microdata)
+                .build();
+            group_behavior.add(&extract_microdata_row);
+
             let download_images_row = adw::SwitchRow::builder()
                 .title("Download Image Files")
                 .subtitle("Saves images locally to project folder")
@@ -1049,6 +1056,7 @@ impl MainWindow {
                     respect_robots: respect_robots_row.is_active(),
                     follow_redirects: follow_redirects_row.is_active(),
                     js_rendering: js_rendering_row.is_active(),
+                    extract_microdata: extract_microdata_row.is_active(),
                     include_regex: if include_text.trim().is_empty() { None } else { Some(include_text) },
                     exclude_regex: if exclude_text.trim().is_empty() { None } else { Some(exclude_text) },
                     ai_provider: provider,
