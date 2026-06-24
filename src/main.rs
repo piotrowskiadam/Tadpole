@@ -16,7 +16,16 @@ fn main() {
     // 2. Enter Tokio runtime context so any tokio::spawn calls from GTK run inside this runtime
     let _guard = rt.enter();
 
-    // 3. Initialize Libadwaita application
+    // 3. Write application icon to a temporary directory so GtkIconTheme can find it at runtime
+    // even when running uninstalled (e.g. during development with cargo run or AppImage)
+    let temp_icon_dir = std::env::temp_dir().join("tadpole-icons");
+    if std::fs::create_dir_all(&temp_icon_dir).is_ok() {
+        let icon_bytes = include_bytes!("../tadpolelogonobg.png");
+        let icon_path = temp_icon_dir.join("com.tadpole.seo.png");
+        let _ = std::fs::write(&icon_path, icon_bytes);
+    }
+
+    // 4. Initialize Libadwaita application
     let app = adw::Application::builder()
         .application_id("com.tadpole.seo")
         .build();
@@ -45,12 +54,17 @@ fn main() {
                 &provider,
                 gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
+
+            // Register the temporary icon directory search path
+            let icon_theme = gtk::IconTheme::for_display(&display);
+            let temp_icon_dir = std::env::temp_dir().join("tadpole-icons");
+            icon_theme.add_search_path(&temp_icon_dir);
         }
 
         let main_window = MainWindow::new(app);
         main_window.present();
     });
 
-    // 4. Run GTK application event loop (blocks until app exits)
+    // 5. Run GTK application event loop (blocks until app exits)
     app.run();
 }
