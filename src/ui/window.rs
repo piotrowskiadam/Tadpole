@@ -950,6 +950,54 @@ impl MainWindow {
             page_markdown.add(&group_scraping);
             pref_window.add(&page_markdown);
 
+            // About Page
+            let page_about = adw::PreferencesPage::builder()
+                .title("About")
+                .icon_name("help-about-symbolic")
+                .build();
+
+            let group_about = adw::PreferencesGroup::builder()
+                .title("Tadpole")
+                .description("Tadpole is a fast, native desktop SEO crawler and site auditing tool built in Rust and GTK4.")
+                .build();
+
+            // Version Row
+            let version_row = adw::ActionRow::builder()
+                .title("Version")
+                .subtitle(env!("CARGO_PKG_VERSION"))
+                .build();
+            group_about.add(&version_row);
+
+            // License Row
+            let license_row = adw::ActionRow::builder()
+                .title("License")
+                .subtitle("MIT License")
+                .build();
+            group_about.add(&license_row);
+
+            // GitHub Row
+            let github_row = adw::ActionRow::builder()
+                .title("Project Website")
+                .subtitle("https://github.com/piotrowskiadam/Tadpole")
+                .activatable(true)
+                .build();
+            
+            let link_icon = gtk::Image::builder()
+                .icon_name("external-link-symbolic")
+                .valign(gtk::Align::Center)
+                .build();
+            github_row.add_suffix(&link_icon);
+
+            let pref_window_for_about = pref_window.clone();
+            github_row.connect_activated(move |_| {
+                let launcher = gtk::UriLauncher::new("https://github.com/piotrowskiadam/Tadpole");
+                launcher.launch(Some(&pref_window_for_about), None::<&gio::Cancellable>, |_| {});
+            });
+            group_about.add(&github_row);
+
+            page_about.add(&group_about);
+            pref_window.add(&page_about);
+
             // Save settings on close
             let state_save = state_pref.clone();
             let model_dropdown_save = model_dropdown.clone();
