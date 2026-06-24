@@ -1006,7 +1006,7 @@ impl MainWindow {
             let openai_models_save = openai_models.clone();
             let openrouter_models_save = openrouter_models.clone();
 
-            pref_window.connect_destroy(move |_| {
+            pref_window.connect_close_request(move |_| {
                 let include_text = include_row.text().to_string();
                 let exclude_text = exclude_row.text().to_string();
                 let api_key_text = api_key_row.text().to_string();
@@ -1067,6 +1067,8 @@ impl MainWindow {
                     md_auto_generate: current_config.md_auto_generate, // Preserve
                 };
                 state_save.set_config(new_config);
+
+                glib::Propagation::Proceed
             });
 
             pref_window.present();
