@@ -4,12 +4,16 @@ AppVersion=0.1.0
 DefaultDirName={autopf}\Tadpole
 DefaultGroupName=Tadpole
 UninstallDisplayIcon={app}\tadpole.exe
+SetupIconFile=tadpole.ico
+WizardImageFile=installer_wizard.png
+WizardSmallImageFile=installer_small.png
 Compression=lzma2
 SolidCompression=yes
 OutputDir=dist
 OutputBaseFilename=TadpoleSetup
 DisableWelcomePage=no
 DisableDirPage=no
+
 
 [Files]
 Source: "dist\tadpole-windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
