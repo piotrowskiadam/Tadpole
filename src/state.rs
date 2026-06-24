@@ -188,6 +188,7 @@ pub struct CrawlStateInner {
     pub is_crawling: bool,
     pub is_paused: bool,
     pub config: CrawlConfig,
+    pub inlinks_map: HashMap<String, HashSet<String>>,
 }
 
 #[derive(Clone)]
@@ -205,6 +206,7 @@ impl CrawlState {
                 is_crawling: false,
                 is_paused: false,
                 config: CrawlConfig::default(),
+                inlinks_map: HashMap::new(),
             })),
         }
     }
@@ -216,14 +218,24 @@ impl CrawlState {
         inner.discovered_set.clear();
         inner.is_crawling = false;
         inner.is_paused = false;
+        inner.inlinks_map.clear();
     }
 
     pub fn get_result(&self, url: &str) -> Option<CrawlResult> {
         self.inner.read().urls.get(url).cloned()
     }
 
-    pub fn insert_result(&self, result: CrawlResult) {
+    pub fn insert_result(&self, mut result: CrawlResult) {
         let mut inner = self.inner.write();
+        
+        // Populate inlinks from the map if we have any accumulated inlinks
+        if let Some(inlinks) = inner.inlinks_map.get(&result.url) {
+            for link in inlinks {
+                if !result.inlinks.contains(link) {
+                    result.inlinks.push(link.clone());
+                }
+            }
+        }
         
         // Update stats
         if let Some(code) = result.status_code {
@@ -259,6 +271,14 @@ impl CrawlState {
 
     pub fn add_inlink(&self, target_url: &str, source_url: &str) {
         let mut inner = self.inner.write();
+        
+        // 1. Accumulate in the map
+        inner.inlinks_map
+            .entry(target_url.to_string())
+            .or_insert_with(HashSet::new)
+            .insert(source_url.to_string());
+            
+        // 2. If the target URL is already crawled/inserted, update its result dynamically
         if let Some(res) = inner.urls.get_mut(target_url) {
             if !res.inlinks.contains(&source_url.to_string()) {
                 res.inlinks.push(source_url.to_string());
@@ -306,9 +326,18 @@ impl CrawlState {
         let mut inner = self.inner.write();
         inner.urls.clear();
         inner.discovered_set.clear();
+        inner.inlinks_map.clear();
         for res in &project.results {
             inner.urls.insert(res.url.clone(), res.clone());
             inner.discovered_set.insert(res.url.clone());
+            
+            // Rebuild inlinks_map from loaded results
+            for inlink in &res.inlinks {
+                inner.inlinks_map
+                    .entry(res.url.clone())
+                    .or_insert_with(HashSet::new)
+                    .insert(inlink.clone());
+            }
         }
         inner.stats = project.stats;
         inner.config = project.config;

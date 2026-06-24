@@ -1126,4 +1126,35 @@ mod tests {
         assert_eq!(get_catalogue_url("https://example.com/index.html"), Some("https://example.com/".to_string()));
         assert_eq!(get_catalogue_url("https://example.com/foo/index.html"), Some("https://example.com/foo/".to_string()));
     }
+
+    #[test]
+    fn test_state_inlinks_accumulation() {
+        let state = crate::state::CrawlState::new();
+        
+        // 1. Add inlink for a page that has not been crawled/inserted yet
+        state.add_inlink("https://example.com/target", "https://example.com/source-1");
+        
+        // 2. Insert the result for the target page
+        let target_res = crate::state::CrawlResult::new_failed(
+            "https://example.com/target".to_string(),
+            Some(200),
+            None,
+            "Indexable".to_string(),
+            0,
+            100,
+        );
+        state.insert_result(target_res);
+        
+        // 3. Verify inlinks were merged during insertion
+        let res_1 = state.get_result("https://example.com/target").unwrap();
+        assert!(res_1.inlinks.contains(&"https://example.com/source-1".to_string()));
+        
+        // 4. Add another inlink now that the page exists in the state
+        state.add_inlink("https://example.com/target", "https://example.com/source-2");
+        
+        // 5. Verify it was appended immediately
+        let res_2 = state.get_result("https://example.com/target").unwrap();
+        assert!(res_2.inlinks.contains(&"https://example.com/source-1".to_string()));
+        assert!(res_2.inlinks.contains(&"https://example.com/source-2".to_string()));
+    }
 }
