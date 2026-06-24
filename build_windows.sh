@@ -8,8 +8,10 @@ pacman -S --noconfirm --needed \
     mingw-w64-x86_64-libadwaita \
     mingw-w64-x86_64-pkg-config \
     mingw-w64-x86_64-unzip \
+    mingw-w64-x86_64-vulkan-loader \
     git \
     zip
+
 
 # Check if rustup / cargo is installed, if not install it
 if ! command -v cargo &> /dev/null; then
@@ -40,6 +42,15 @@ dependencies=$(ldd target/release/tadpole.exe | grep /mingw64/bin | awk '{print 
 for dll in $dependencies; do
     cp "$dll" "$DIST_DIR/"
 done
+
+# Copy Vulkan loader (loaded dynamically by GTK4)
+echo "=== Copying Vulkan loader ==="
+if [ -f "/mingw64/bin/vulkan-1.dll" ]; then
+    cp "/mingw64/bin/vulkan-1.dll" "$DIST_DIR/"
+elif [ -f "/mingw64/bin/libvulkan-1.dll" ]; then
+    cp "/mingw64/bin/libvulkan-1.dll" "$DIST_DIR/vulkan-1.dll"
+fi
+
 
 # Copy GSettings schema and compile it
 echo "=== Copying GSettings schemas ==="
