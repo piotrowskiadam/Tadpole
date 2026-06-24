@@ -112,7 +112,9 @@ jobs:
             mingw-w64-x86_64-gtk4
             mingw-w64-x86_64-libadwaita
             mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-vulkan-loader
             zip
+
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -143,6 +145,13 @@ jobs:
           for dll in $dependencies; do
               cp "$dll" "$DIST_DIR/"
           done
+
+          echo "=== Copying Vulkan loader ==="
+          if [ -f "/mingw64/bin/vulkan-1.dll" ]; then
+              cp "/mingw64/bin/vulkan-1.dll" "$DIST_DIR/"
+          elif [ -f "/mingw64/bin/libvulkan-1.dll" ]; then
+              cp "/mingw64/bin/libvulkan-1.dll" "$DIST_DIR/vulkan-1.dll"
+          fi
 
           echo "=== Copying GSettings schemas ==="
           SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
