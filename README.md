@@ -6,9 +6,13 @@ Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/
 
 ---
 
-## Available Packages
+## Download
 
-Tadpole release assets are automatically built and published for the following platforms:
+You can download the latest pre-compiled binaries and installers for all supported platforms directly from the [Releases](https://github.com/piotrowskiadam/Tadpole/releases) page.
+
+### Available Packages
+
+Tadpole release assets are built and published automatically for the following formats:
 
 | OS | Format | Type | Installation / Run Command |
 | :--- | :--- | :--- | :--- |
