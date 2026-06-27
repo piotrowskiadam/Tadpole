@@ -1,12 +1,43 @@
-# Tadpole
+<p align="center">
+  <img src="tadpolelogonobg.png" alt="Tadpole Logo" width="160">
+</p>
 
-Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita. It provides a simple, fast, and visual way to crawl websites, inspect SEO parameters, run audits, and analyze structured schema data on Linux and Windows.
+<h1 align="center">Tadpole</h1>
 
-<img src="tadpolelogonobg.png" alt="Tadpole Logo" width="160">
+<p align="center">
+  <b>A native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita.</b><br>
+  <i>A simple, fast, and visual way to crawl websites, inspect SEO parameters, run audits, and analyze structured schema data.</i>
+</p>
 
-## Preview
+<p align="center">
+  <a href="https://snapcraft.io/tadpole">
+    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store" height="40">
+  </a>
+</p>
 
-![Tadpole Crawl in Progress](CrawlInProgressScreenshot.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/GTK-4.0-orange" alt="GTK 4.0">
+  <img src="https://img.shields.io/badge/Libadwaita-1.5-blue" alt="Libadwaita 1.5">
+  <img src="https://img.shields.io/badge/Language-Rust-red" alt="Rust">
+  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License: MIT">
+</p>
+
+<br>
+
+<p align="center">
+  <img src="CrawlInProgressScreenshot.png" alt="Tadpole Crawl in Progress" width="800">
+</p>
+
+Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita. It replaces slow, resource-heavy SEO tools with a fast, modern, and privacy-respecting native experience. Optimized for developers, SEO specialists, and webmasters who want to run diagnostics locally on their own machines.
+
+## Why Tadpole?
+
+Most SEO crawlers are slow, memory-hungry Electron apps, or require expensive monthly subscriptions. **Tadpole is different:**
+
+* **Native & Fast:** Written in Rust and compiled to native machine code. It crawls fast and uses a fraction of the RAM consumed by typical tools.
+* **Beautiful & Adaptive UI:** Built using GTK4 and Libadwaita, offering a gorgeous modern dark mode interface that adapts seamlessly to various screen sizes.
+* **Privacy-First & Local:** No accounts, no subscriptions, and no cloud-tracking. All data stays securely on your own computer.
 
 ---
 
@@ -17,8 +48,6 @@ You can download the latest pre-compiled binaries and installers for all support
 ### Available Packages
 
 Tadpole release assets are built and published automatically for the following formats:
-
-[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/tadpole)
 
 | OS | Format | Type | Installation / Run Command |
 | :--- | :--- | :--- | :--- |
