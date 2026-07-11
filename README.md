@@ -11,11 +11,13 @@
 
 <p align="center">
   <a href="https://snapcraft.io/tadpole">
-    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store" style="vertical-align: middle;">
+    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store">
   </a>
-  &nbsp;&nbsp;
+</p>
+
+<p align="center">
   <a href='https://ko-fi.com/B5Z022ZL32' target='_blank'>
-    <img height='36' style='border:0px;height:36px;vertical-align: middle;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' />
+    <img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' />
   </a>
 </p>
 
