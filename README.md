@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-  <a href='https://ko-fi.com/B5Z022ZL32' target='_blank'>
-    <img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' />
+  <a href="https://ko-fi.com/B5Z022ZL32" target="_blank">
+    <img src="https://storage.ko-fi.com/cdn/brandasset/v2/support_me_on_kofi_blue.png" alt="Support Me on Ko-fi" height="36" style="border:0px; height:36px;">
   </a>
 </p>
 
