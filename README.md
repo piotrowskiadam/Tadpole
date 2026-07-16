@@ -85,43 +85,36 @@ Tadpole release assets are built and published automatically for the following f
 - **Response Metrics**: Average response times, page sizes, and word counts.
 - **Depth Distribution**: Visual distribution graph rendered dynamically using Cairo.
 
-### 4. Interactive Visual Site Map
-- **Force-Directed Graph**: Opens a separate canvas visualizing crawled pages as nodes and directories as structural hubs.
-- **Interactive Controls**:
-  - Hover or click nodes to display page titles and paths.
-  - Click directory nodes to collapse/expand entire folders (collapsed folders display child counts).
-  - Use toolbar controls for zoom, centering, expanding, or collapsing the entire site map.
-
-### 5. Social & Open Graph Audit
+### 4. Social & Open Graph Audit
 - **Metadata Extraction**: Parsed Open Graph (`og:title`, `og:description`, `og:image`, `og:url`, `og:type`) and Twitter Card metadata.
 - **Diagnostic tab**: Shows social tags, active warning indicators (such as mismatches between standard titles/descriptions and their social equivalents), and missing essentials.
 
-### 6. Schema & Structured Data Checker
+### 5. Schema & Structured Data Checker
 - **JSON-LD Schema Extraction**: Extracts nested JSON-LD schema blocks from pages.
 - **Syntax Highlighting**: Monospace code editor with real-time character-offset syntax highlighting for pretty-printed raw JSON.
 - **Combined View**: Visually separated "Combined View" section that merges all JSON-LD schemas into a single array for overall inspection, alongside a list of individual schema blocks.
 - **Validation Errors**: Evaluates structures for `@context` validity and `@type` presence.
 
-### 7. Headings Outline Tab
+### 6. Headings Outline Tab
 - **Hierarchy Tree**: Displays headings (`H1` to `H6`) in document order.
 - **Copy Outline**: A toolbar button that copies the structured heading tree to the clipboard with indentation. Includes visual "Copied!" feedback.
 
-### 8. AI Metadata Assistant
+### 7. AI Metadata Assistant
 - **Optimized Suggestions**: Integrates with OpenAI and OpenRouter to analyze page content and suggest optimized metadata.
 - **Dynamic Model Selector**: Dropdown selection displaying active provider models with a background refresh mechanism, search/filter entry, and custom model inputs.
 
-### 9. Markdown Scraping & Exporter
+### 8. Markdown Scraping & Exporter
 - **Page Content Conversion**: Extracts core article/body text (filtering headers, footers, navigation, sidebars, and custom CSS selectors) and converts it to clean GitHub Flavored Markdown (GFM).
 - **Tab Preview**: Shows a monospace preview of the page's Markdown content under the details panel, with options to copy to clipboard or save to a file.
 - **Batch Directory Export**: Click the export dropdown in the header bar to export all crawled pages to a selected folder as separate `<slug>.md` files.
 
-### 10. Internal Linking Diagnostics & N-grams (beta)
+### 9. Internal Linking Diagnostics & N-grams (beta)
 - **Link Opportunities**: Scans indexable 2xx pages, extracts target keywords from titles/headings, and finds pages mentioning those keywords that do not currently link to the target page.
 - **N-gram Analyzer**: Extracts common phrases (1 to 4 words) from site headings and titles to reveal keyword density and top themes.
 - **Responsive Details Integration**: Selecting any opportunity loads that page's diagnostics details immediately in the bottom panel.
 - **CSV Exporter**: Export the entire linking report to a CSV file.
 
-### 11. Comprehensive SEO CSV Audit
+### 10. Comprehensive SEO CSV Audit
 - **34 Columns of Data**: Export complete details for every single crawled page, including:
   - Meta titles and descriptions, along with their character lengths.
   - All internal links pointing to a page (`Inlinks`) and all links pointing outward (`Outlinks`).
