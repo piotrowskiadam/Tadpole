@@ -262,7 +262,7 @@ jobs:
           echo "snap_file=$SNAP_FILE" >> $GITHUB_OUTPUT
 
       - name: Publish to Snap Store
-        uses: snapcore/action-publish@v1
+        uses: canonical/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
