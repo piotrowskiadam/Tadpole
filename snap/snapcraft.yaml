@@ -24,9 +24,19 @@ apps:
       - network-bind
 
 parts:
+  rust-deps:
+    plugin: nil
+    build-packages:
+      - curl
+    override-pull: |
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
   tadpole:
     plugin: rust
+    after: [rust-deps]
     source: .
+    build-environment:
+      - PATH: "$HOME/.cargo/bin:$PATH"
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev
