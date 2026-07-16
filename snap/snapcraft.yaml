@@ -1,6 +1,6 @@
 name: tadpole
 base: core24
-version: '0.2.9'
+version: '0.2.10'
 website: https://github.com/piotrowskiadam/Tadpole
 contact: https://github.com/piotrowskiadam/Tadpole/issues
 source-code: https://github.com/piotrowskiadam/Tadpole

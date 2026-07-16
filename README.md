@@ -39,11 +39,12 @@ Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/
 
 ## Why Tadpole?
 
-Most SEO crawlers are slow, memory-hungry Electron apps, or require expensive monthly subscriptions. **Tadpole is different:**
+Tadpole delivers direct, actionable SEO value to your local workflow with no subscriptions or server-side limitations:
 
-* **Native & Fast:** Written in Rust and compiled to native machine code. It crawls fast and uses a fraction of the RAM consumed by typical tools.
-* **Beautiful & Adaptive UI:** Built using GTK4 and Libadwaita, offering a gorgeous modern dark mode interface that adapts seamlessly to various screen sizes.
-* **Privacy-First & Local:** No accounts, no subscriptions, and no cloud-tracking. All data stays securely on your own computer.
+* **Instant Markdown Scraping:** Scrape and save clean page body text into markdown files. Perfect for archiving, content automation, or feeding directly into AI agents and LLM prompts.
+* **Domain-wide Key Issue Export:** Generate comprehensive CSV spreadsheets detailing Canonical errors, Indexability statuses, Schema syntax issues, missing metadata, and heading hierarchy trees.
+* **Internal Link Diagnostics & N-grams:** Uncover missing link opportunities and view popular themes (N-grams) across titles and headings to quickly plan your keyword anchors.
+* **Low-Cost, Native Performance:** Run local audits with zero tracking, zero accounts, and extremely low system memory usage.
 
 ---
 
