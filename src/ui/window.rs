@@ -16,6 +16,7 @@ pub struct MainWindow {
     table: Rc<Table>,
     details: Rc<Details>,
     summary_panel: Rc<crate::ui::summary::SummaryPanel>,
+    link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
 
     // Header bar controls
     address_entry: gtk::Entry,
@@ -237,7 +238,17 @@ impl MainWindow {
         table_box.append(&search_entry);
         table_box.append(table.widget());
 
-        right_paned.set_start_child(Some(&table_box));
+        let link_opportunities = Rc::new(crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()));
+
+        // Main notebook for crawl results / linking opportunities
+        let main_notebook = gtk::Notebook::new();
+        main_notebook.set_vexpand(true);
+        main_notebook.set_hexpand(true);
+
+        main_notebook.append_page(&table_box, Some(&gtk::Label::new(Some("Crawl Results"))));
+        main_notebook.append_page(link_opportunities.widget(), Some(&gtk::Label::new(Some("Link Opportunities (beta)"))));
+
+        right_paned.set_start_child(Some(&main_notebook));
 
         let details = Rc::new(Details::new());
         right_paned.set_end_child(Some(details.widget()));
@@ -270,6 +281,7 @@ impl MainWindow {
             table,
             details,
             summary_panel,
+            link_opportunities,
             address_entry,
             start_button,
             pause_button,
@@ -326,6 +338,7 @@ impl MainWindow {
         let mode_dropdown = self.mode_dropdown.clone();
         let edit_list_button = self.edit_list_button.clone();
         let loaded_list_urls = self.loaded_list_urls.clone();
+        let link_opps = self.link_opportunities.clone();
 
         // Create thread-safe Tokio channel
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<CrawlUpdate>();
@@ -338,6 +351,17 @@ impl MainWindow {
                 details_clone.update(&url, &state_clone);
             } else {
                 details_clone.clear();
+            }
+        });
+
+        // Handle selected item changed in the link opportunities table
+        let details_clone2 = details.clone();
+        let state_clone2 = state.clone();
+        link_opps.connect_selection_changed(move |maybe_url| {
+            if let Some(url) = maybe_url {
+                details_clone2.update(&url, &state_clone2);
+            } else {
+                details_clone2.clear();
             }
         });
 
@@ -1211,6 +1235,7 @@ impl MainWindow {
         let mode_dropdown_open = mode_dropdown.clone();
         let edit_list_button_open = edit_list_button.clone();
         let loaded_list_urls_open = loaded_list_urls.clone();
+        let link_opps_open = link_opps.clone();
         open_button.connect_clicked(move |_| {
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Open Crawl Project");
@@ -1229,6 +1254,7 @@ impl MainWindow {
             let mode_dropdown_inner = mode_dropdown_open.clone();
             let edit_list_button_inner = edit_list_button_open.clone();
             let loaded_list_urls_inner = loaded_list_urls_open.clone();
+            let link_opps_inner = link_opps_open.clone();
             dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
@@ -1239,6 +1265,7 @@ impl MainWindow {
                                 state_inner.load_project(project.clone());
                                 
                                 table_inner.clear();
+                                link_opps_inner.clear();
                                 for res in project.results {
                                     table_inner.add_or_update(res);
                                 }
@@ -1327,6 +1354,7 @@ impl MainWindow {
         let status_label_start = status_label.clone();
         let summary_panel_start = summary_panel.clone();
         let loaded_list_urls_start = loaded_list_urls.clone();
+        let link_opps_start = link_opps.clone();
 
         start_button.connect_clicked(move |btn| {
             let is_crawling = state_start.is_crawling();
@@ -1359,6 +1387,7 @@ impl MainWindow {
                 state_start.reset();
                 table_start.clear();
                 details_start.clear();
+                link_opps_start.clear();
                 sidebar_start.update_counts(&state_start);
                 summary_panel_start.update(&state_start);
 

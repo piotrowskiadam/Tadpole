@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita.</b><br>
-  <i>A simple, fast, and visual way to crawl websites, inspect SEO parameters, run audits, and analyze structured schema data.</i>
+  <i>A simple, fast, and visual way to crawl websites, inspect SEO, analyze schema data, download clean Markdown copies of your pages, and identify internal linking opportunities.</i>
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
   <img src="CrawlInProgressScreenshot.png" alt="Tadpole Crawl in Progress" width="800">
 </p>
 
-Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita. It replaces slow, resource-heavy SEO tools with a fast, modern, and privacy-respecting native experience. Optimized for developers, SEO specialists, and webmasters who want to run diagnostics locally on their own machines.
+Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita. It replaces slow, resource-heavy SEO tools with a fast, modern, and privacy-respecting native experience. Optimized for developers, SEO specialists, and content editors who want to run diagnostics locally, analyze internal link opportunities, and scrape/download clean Markdown copies of their pages.
 
 ## Why Tadpole?
 
@@ -114,7 +114,13 @@ Tadpole release assets are built and published automatically for the following f
 - **Tab Preview**: Shows a monospace preview of the page's Markdown content under the details panel, with options to copy to clipboard or save to a file.
 - **Batch Directory Export**: Click the export dropdown in the header bar to export all crawled pages to a selected folder as separate `<slug>.md` files.
 
-### 10. Comprehensive SEO CSV Audit
+### 10. Internal Linking Diagnostics & N-grams (beta)
+- **Link Opportunities**: Scans indexable 2xx pages, extracts target keywords from titles/headings, and finds pages mentioning those keywords that do not currently link to the target page.
+- **N-gram Analyzer**: Extracts common phrases (1 to 4 words) from site headings and titles to reveal keyword density and top themes.
+- **Responsive Details Integration**: Selecting any opportunity loads that page's diagnostics details immediately in the bottom panel.
+- **CSV Exporter**: Export the entire linking report to a CSV file.
+
+### 11. Comprehensive SEO CSV Audit
 - **34 Columns of Data**: Export complete details for every single crawled page, including:
   - Meta titles and descriptions, along with their character lengths.
   - All internal links pointing to a page (`Inlinks`) and all links pointing outward (`Outlinks`).
