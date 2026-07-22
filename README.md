@@ -114,7 +114,13 @@ Tadpole release assets are built and published automatically for the following f
 - **Responsive Details Integration**: Selecting any opportunity loads that page's diagnostics details immediately in the bottom panel.
 - **CSV Exporter**: Export the entire linking report to a CSV file.
 
-### 10. Comprehensive SEO CSV Audit
+### 10. Visual Site Map & 3D Constellation Visualizer (Pop-up Window)
+- **Recursive Directory Tree Mode**: Parses site URLs into a recursive N-level tree directory (Root → Subdirectories → Child Subdirectories → Pages) with smooth organic Bezier curve branch connectors (`cairo.curve_to`).
+- **3D Site Constellation (TensorFlow Projector Mode)**: Interactive 3D spatial cluster visualization in $(X,Y,Z)$ with 3D camera orbit rotation (mouse drag), dolly zoom (scroll wheel), and depth attenuation fog.
+- **Smart Level-of-Detail (LOD) Label Culling**: Automatically hides background text label clutter to maintain 60+ FPS performance and crystal-clear legibility. Hovering or clicking any node pops up its text label and populates its full audit details in the main window.
+- **SEO Health Encodings**: Sizes node radii logarithmically by total branch pages / internal links, and highlights broken directory branches in red (4xx/5xx errors) or orange (3xx redirects).
+
+### 11. Comprehensive SEO CSV Audit
 - **34 Columns of Data**: Export complete details for every single crawled page, including:
   - Meta titles and descriptions, along with their character lengths.
   - All internal links pointing to a page (`Inlinks`) and all links pointing outward (`Outlinks`).

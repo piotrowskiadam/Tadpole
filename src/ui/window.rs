@@ -17,6 +17,7 @@ pub struct MainWindow {
     details: Rc<Details>,
     summary_panel: Rc<crate::ui::summary::SummaryPanel>,
     link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
+    visualizer_button: gtk::Button,
 
     // Header bar controls
     address_entry: gtk::Entry,
@@ -85,6 +86,12 @@ impl MainWindow {
             .tooltip_text("Save SEO Crawl Project")
             .build();
         header_bar.pack_start(&save_button);
+
+        let visualizer_button = gtk::Button::builder()
+            .icon_name("network-workgroup-symbolic")
+            .tooltip_text("Visual Site Map (Directory & 3D Constellation Diagrams)")
+            .build();
+        header_bar.pack_start(&visualizer_button);
 
         let pref_button = gtk::Button::builder()
             .icon_name("emblem-system-symbolic")
@@ -282,6 +289,7 @@ impl MainWindow {
             details,
             summary_panel,
             link_opportunities,
+            visualizer_button,
             address_entry,
             start_button,
             pause_button,
@@ -339,6 +347,7 @@ impl MainWindow {
         let edit_list_button = self.edit_list_button.clone();
         let loaded_list_urls = self.loaded_list_urls.clone();
         let link_opps = self.link_opportunities.clone();
+        let vis_button = self.visualizer_button.clone();
 
         // Create thread-safe Tokio channel
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<CrawlUpdate>();
@@ -363,6 +372,22 @@ impl MainWindow {
             } else {
                 details_clone2.clear();
             }
+        });
+
+        // Open Visualizer window on button click
+        let state_vis = state.clone();
+        let parent_win_vis = main_window_widget.clone();
+        let details_vis = details.clone();
+        vis_button.connect_clicked(move |_| {
+            let vis_win = crate::ui::site_visualizer::VisualizerWindow::new(&parent_win_vis, state_vis.clone());
+            let details_inner = details_vis.clone();
+            let state_inner = state_vis.clone();
+            vis_win.connect_selection_changed(move |maybe_url: Option<String>| {
+                if let Some(url) = maybe_url {
+                    details_inner.update(&url, &state_inner);
+                }
+            });
+            vis_win.show();
         });
 
         // Handle navigation inside details panel
@@ -1236,6 +1261,7 @@ impl MainWindow {
         let edit_list_button_open = edit_list_button.clone();
         let loaded_list_urls_open = loaded_list_urls.clone();
         let link_opps_open = link_opps.clone();
+        let status_label_open = status_label.clone();
         open_button.connect_clicked(move |_| {
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Open Crawl Project");
@@ -1255,40 +1281,75 @@ impl MainWindow {
             let edit_list_button_inner = edit_list_button_open.clone();
             let loaded_list_urls_inner = loaded_list_urls_open.clone();
             let link_opps_inner = link_opps_open.clone();
+            let status_label_inner = status_label_open.clone();
+
             dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
-                        if let Ok(f) = std::fs::File::open(&path) {
-                            let project_res: Result<crate::state::CrawlProject, _> = serde_json::from_reader(f);
-                            if let Ok(project) = project_res {
-                                address_inner.set_text(&project.seed_url);
-                                state_inner.load_project(project.clone());
-                                
-                                table_inner.clear();
-                                link_opps_inner.clear();
-                                for res in project.results {
-                                    table_inner.add_or_update(res);
-                                }
-                                sidebar_inner.update_counts(&state_inner);
-                                summary_panel_inner.update(&state_inner);
+                        status_label_inner.set_text("Loading saved crawl project...");
 
-                                let config = state_inner.get_config();
+                        let state_bg = state_inner.clone();
+                        let address_bg = address_inner.clone();
+                        let table_bg = table_inner.clone();
+                        let sidebar_bg = sidebar_inner.clone();
+                        let summary_bg = summary_panel_inner.clone();
+                        let mode_dropdown_bg = mode_dropdown_inner.clone();
+                        let edit_list_bg = edit_list_button_inner.clone();
+                        let loaded_list_ref = loaded_list_urls_inner.clone();
+                        let link_opps_bg = link_opps_inner.clone();
+                        let status_label_bg = status_label_inner.clone();
+
+                        glib::MainContext::default().spawn_local(async move {
+                            let project_opt = tokio::task::spawn_blocking(move || {
+                                if let Ok(f) = std::fs::File::open(&path) {
+                                    let project_res: Result<crate::state::CrawlProject, _> = serde_json::from_reader(f);
+                                    project_res.ok()
+                                } else {
+                                    None
+                                }
+                            }).await.ok().flatten();
+
+                            if let Some(project) = project_opt {
+                                address_bg.set_text(&project.seed_url);
+                                state_bg.load_project(project.clone());
+
+                                table_bg.clear();
+                                link_opps_bg.clear();
+
+                                let results = project.results.clone();
+                                let total = results.len();
+
+                                for (idx, res) in results.into_iter().enumerate() {
+                                    table_bg.add_or_update(res);
+                                    if idx % 50 == 0 {
+                                        status_label_bg.set_text(&format!("Loading rows {} / {}", idx, total));
+                                        tokio::task::yield_now().await;
+                                    }
+                                }
+
+                                sidebar_bg.update_counts(&state_bg);
+                                summary_bg.update(&state_bg);
+
+                                let config = state_bg.get_config();
                                 let selected_idx = match config.crawl_mode {
                                     CrawlMode::Crawl => 0,
                                     CrawlMode::List => 1,
                                     CrawlMode::Path => 2,
                                     CrawlMode::Url => 3,
                                 };
-                                mode_dropdown_inner.set_selected(selected_idx);
+                                mode_dropdown_bg.set_selected(selected_idx);
                                 let is_list = config.crawl_mode == CrawlMode::List;
-                                address_inner.set_visible(!is_list);
-                                edit_list_button_inner.set_visible(is_list);
+                                address_bg.set_visible(!is_list);
+                                edit_list_bg.set_visible(is_list);
                                 if is_list {
                                     let urls: Vec<String> = project.seed_url.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                                    *loaded_list_urls_inner.borrow_mut() = urls;
+                                    *loaded_list_ref.borrow_mut() = urls;
                                 }
+                                status_label_bg.set_text(&format!("Loaded project with {} URLs.", total));
+                            } else {
+                                status_label_bg.set_text("Failed to open project file.");
                             }
-                        }
+                        });
                     }
                 }
             });

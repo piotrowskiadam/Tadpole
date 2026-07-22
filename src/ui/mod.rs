@@ -5,3 +5,4 @@ pub mod details;
 pub mod window;
 pub mod summary;
 pub mod link_opportunities;
+pub mod site_visualizer;
