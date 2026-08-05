@@ -1,6 +1,6 @@
 [package]
 name = "tadpole"
-version = "0.2.11"
+version = "0.3.0"
 edition = "2024"
 description = "Tadpole — a local SEO crawler and site auditing tool"
 license = "MIT"
@@ -25,6 +25,7 @@ headless_chrome = "1.0.22"
 serde_json = "1.0.115"
 cairo-rs = "0.22"
 ego-tree = "0.11.0"
+
 
 
 [package.metadata.deb]
