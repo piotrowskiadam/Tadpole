@@ -63,6 +63,36 @@ impl CrawlFilter {
         }
     }
 
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::All => "all_urls",
+            Self::Status2xx => "status_2xx",
+            Self::Status3xx => "status_3xx",
+            Self::Status4xx => "status_4xx",
+            Self::Status5xx => "status_5xx",
+            Self::TitleMissing => "missing_title",
+            Self::TitleDuplicate => "duplicate_title",
+            Self::TitleTooLong => "title_over_60",
+            Self::TitleTooShort => "title_under_30",
+            Self::DescMissing => "missing_description",
+            Self::DescDuplicate => "duplicate_description",
+            Self::DescTooLong => "description_over_155",
+            Self::DescTooShort => "description_under_70",
+            Self::H1Missing => "missing_h1",
+            Self::H1Multiple => "multiple_h1",
+            Self::H1Duplicate => "duplicate_h1",
+            Self::H2Missing => "missing_h2",
+            Self::H2Multiple => "multiple_h2",
+            Self::ImagesMissingAlt => "images_missing_alt",
+            Self::CanonicalMissing => "missing_canonical",
+            Self::CanonicalOther => "canonicalised",
+            Self::OgTitleMissing => "missing_og_title",
+            Self::OgDescMissing => "missing_og_description",
+            Self::SchemaPresent => "schema_present",
+            Self::SchemaErrors => "schema_errors",
+        }
+    }
+
     pub fn matches(&self, res: &CrawlResult, all_results: &[CrawlResult]) -> bool {
         match self {
             Self::All => true,
@@ -121,6 +151,7 @@ pub struct SidebarRow {
 pub struct Sidebar {
     container: gtk::Box,
     rows: Rc<RefCell<Vec<SidebarRow>>>,
+    list_boxes: Rc<RefCell<Vec<gtk::ListBox>>>,
 }
 
 impl Sidebar {
@@ -301,6 +332,20 @@ impl Sidebar {
         Self {
             container,
             rows,
+            list_boxes,
+        }
+    }
+
+    pub fn select_all(&self) {
+        let list_boxes = self.list_boxes.borrow();
+        for (i, lb) in list_boxes.iter().enumerate() {
+            if i == 0 {
+                if let Some(first_row) = lb.row_at_index(0) {
+                    lb.select_row(Some(&first_row));
+                }
+            } else {
+                lb.select_row(None::<&gtk::ListBoxRow>);
+            }
         }
     }
 

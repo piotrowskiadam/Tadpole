@@ -218,6 +218,73 @@ impl Table {
         self.apply_combined_filter();
     }
  
+    pub fn get_active_filter(&self) -> CrawlFilter {
+        *self.active_filter.borrow()
+    }
+
+    pub fn get_filtered_count(&self) -> u32 {
+        self.filter_model.n_items()
+    }
+
+    pub fn copy_to_clipboard_tsv(&self) -> usize {
+        let n = self.filter_model.n_items();
+        if n == 0 {
+            return 0;
+        }
+
+        let headers = [
+            "Address", "Status Code", "Indexability",
+            "Title", "Title Length", "Meta Description", "Meta Length",
+            "H1", "H1 Count", "H2", "H2 Count", "Word Count", "Canonical",
+            "Inlinks Count", "Outlinks Count"
+        ];
+        let mut tsv = headers.join("\t");
+        tsv.push('\n');
+
+        for i in 0..n {
+            if let Some(item) = self.filter_model.item(i) {
+                if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
+                    if let Some(res) = row_data.get_result() {
+                        let clean = |s: &str| s.replace('\t', " ").replace("\r\n", " ").replace('\n', " ");
+                        let title = res.title.as_deref().map(clean).unwrap_or_default();
+                        let title_len = title.chars().count().to_string();
+                        let meta = res.meta_desc.as_deref().map(clean).unwrap_or_default();
+                        let meta_len = meta.chars().count().to_string();
+                        let h1 = res.h1.as_deref().map(clean).unwrap_or_default();
+                        let h2 = res.h2.as_deref().map(clean).unwrap_or_default();
+                        let canonical = res.canonical.as_deref().map(clean).unwrap_or_default();
+
+                        let row = [
+                            clean(&res.url),
+                            res.status_code.map(|c| c.to_string()).unwrap_or_else(|| "Err".to_string()),
+                            clean(&res.indexability_status),
+                            title,
+                            title_len,
+                            meta,
+                            meta_len,
+                            h1,
+                            res.h1_count.to_string(),
+                            h2,
+                            res.h2_count.to_string(),
+                            res.word_count.to_string(),
+                            canonical,
+                            res.inlinks.len().to_string(),
+                            res.outlinks.len().to_string(),
+                        ];
+                        tsv.push_str(&row.join("\t"));
+                        tsv.push('\n');
+                    }
+                }
+            }
+        }
+
+        if let Some(display) = gdk::Display::default() {
+            display.clipboard().set_text(&tsv);
+        }
+
+        n as usize
+    }
+
     pub fn set_search_query(&self, query: &str) {
         *self.search_query.borrow_mut() = query.trim().to_string();
         self.apply_combined_filter();

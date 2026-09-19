@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::crawler::{Crawler, CrawlUpdate};
 use crate::state::{CrawlState, CrawlConfig, CrawlMode};
-use crate::ui::sidebar::Sidebar;
+use crate::ui::sidebar::{Sidebar, CrawlFilter};
 use crate::ui::table::Table;
 use crate::ui::details::Details;
 
@@ -216,12 +216,75 @@ impl MainWindow {
         content_box.append(&main_paned);
 
         let table = Rc::new(Table::new());
+
+        // Active filter banner shown when a sidebar filter is engaged
+        let filter_banner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        filter_banner.add_css_class("card");
+        filter_banner.set_margin_start(10);
+        filter_banner.set_margin_end(10);
+        filter_banner.set_margin_top(0);
+        filter_banner.set_margin_bottom(2);
+        filter_banner.set_visible(false);
+
+        let filter_icon = gtk::Image::from_icon_name("view-filter-symbolic");
+        filter_icon.add_css_class("dim-label");
+        filter_icon.set_margin_start(8);
+        filter_banner.append(&filter_icon);
+
+        let filter_label = gtk::Label::new(None);
+        filter_label.set_halign(gtk::Align::Start);
+        filter_label.set_hexpand(true);
+        filter_banner.append(&filter_label);
+
+        let filter_copy_btn = gtk::Button::builder()
+            .label("Copy for Sheets")
+            .icon_name("edit-copy-symbolic")
+            .has_frame(false)
+            .tooltip_text("Copy filtered rows as TSV to paste directly into Google Sheets or Excel (Ctrl+V)")
+            .valign(gtk::Align::Center)
+            .build();
+        filter_banner.append(&filter_copy_btn);
+
+        let filter_export_btn = gtk::Button::builder()
+            .label("Export CSV")
+            .icon_name("document-save-symbolic")
+            .has_frame(false)
+            .tooltip_text("Save filtered rows to a CSV spreadsheet file")
+            .valign(gtk::Align::Center)
+            .build();
+        filter_banner.append(&filter_export_btn);
+
+        let clear_filter_btn = gtk::Button::builder()
+            .icon_name("window-close-symbolic")
+            .has_frame(false)
+            .tooltip_text("Clear filter (Show all URLs)")
+            .valign(gtk::Align::Center)
+            .margin_end(6)
+            .build();
+        filter_banner.append(&clear_filter_btn);
+
+        let filter_label_clone = filter_label.clone();
+        let filter_banner_clone = filter_banner.clone();
         let sidebar = Rc::new(Sidebar::new({
             let table = table.clone();
             move |filter| {
                 table.set_filter(filter);
+                if filter == CrawlFilter::All {
+                    filter_banner_clone.set_visible(false);
+                } else {
+                    filter_label_clone.set_markup(&format!(
+                        "Filtered by: <b>{}</b>",
+                        glib::markup_escape_text(filter.name())
+                    ));
+                    filter_banner_clone.set_visible(true);
+                }
             }
         }));
+
+        let sidebar_for_clear = sidebar.clone();
+        clear_filter_btn.connect_clicked(move |_| {
+            sidebar_for_clear.select_all();
+        });
 
         main_paned.set_start_child(Some(sidebar.widget()));
 
@@ -243,6 +306,7 @@ impl MainWindow {
             .margin_bottom(6)
             .build();
         table_box.append(&search_entry);
+        table_box.append(&filter_banner);
         table_box.append(table.widget());
 
         let link_opportunities = Rc::new(crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()));
@@ -312,7 +376,7 @@ impl MainWindow {
         main_window.address_entry.set_visible(!is_list);
         main_window.edit_list_button.set_visible(is_list);
 
-        main_window.setup_events(open_button, save_button, pref_button, csv_btn, md_btn, export_popover, search_entry);
+        main_window.setup_events(open_button, save_button, pref_button, csv_btn, md_btn, export_popover, search_entry, filter_copy_btn, filter_export_btn);
 
         main_window
     }
@@ -330,6 +394,8 @@ impl MainWindow {
         md_btn: gtk::Button,
         export_popover: gtk::Popover,
         search_entry: gtk::SearchEntry,
+        filter_copy_btn: gtk::Button,
+        filter_export_btn: gtk::Button,
     ) {
         let state = self.state.clone();
         let table = self.table.clone();
@@ -1131,15 +1197,81 @@ impl MainWindow {
             pref_window.present();
         });
 
-        // Export CSV click
+        // Active filter banner action: Copy for Sheets (TSV to clipboard)
+        let table_filter_copy = table.clone();
+        let status_label_copy = status_label.clone();
+        filter_copy_btn.connect_clicked(move |_| {
+            let count = table_filter_copy.copy_to_clipboard_tsv();
+            status_label_copy.set_text(&format!(
+                "Copied {} filtered rows to clipboard (ready to paste directly into Google Sheets / Excel with Ctrl+V).",
+                count
+            ));
+        });
+
+        // Active filter banner action: Export filtered results to CSV
+        let table_filter_export = table.clone();
+        let parent_win_filter = main_window_widget.clone();
+        let status_label_filter_export = status_label.clone();
+        filter_export_btn.connect_clicked(move |_| {
+            let active_filter = table_filter_export.get_active_filter();
+            let initial_name = if active_filter != CrawlFilter::All {
+                format!("tadpole_{}.csv", active_filter.slug())
+            } else {
+                "tadpole_crawl_results.csv".to_string()
+            };
+            let title = if active_filter != CrawlFilter::All {
+                format!("Export {} to CSV", active_filter.name())
+            } else {
+                "Export crawl to CSV".to_string()
+            };
+
+            let dialog = gtk::FileDialog::new();
+            dialog.set_title(&title);
+            dialog.set_initial_name(Some(&initial_name));
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some("CSV Files"));
+            filter.add_pattern("*.csv");
+            let filters = gio::ListStore::new::<gtk::FileFilter>();
+            filters.append(&filter);
+            dialog.set_filters(Some(&filters));
+
+            let table_inner = table_filter_export.clone();
+            let status_inner = status_label_filter_export.clone();
+            dialog.save(Some(&parent_win_filter), None::<&gio::Cancellable>, move |result| {
+                if let Ok(file) = result {
+                    if let Some(path) = file.path() {
+                        if let Err(e) = table_inner.export_to_csv(&path) {
+                            status_inner.set_text(&format!("Failed to export CSV: {}", e));
+                        } else {
+                            status_inner.set_text(&format!("Successfully exported filtered CSV to {}", path.display()));
+                        }
+                    }
+                }
+            });
+        });
+
+        // Export CSV click from header bar menu
         let table_export = table.clone();
         let parent_win_export = main_window_widget.clone();
         let export_popover_csv = export_popover.clone();
+        let status_label_csv = status_label.clone();
         csv_btn.connect_clicked(move |_| {
             export_popover_csv.popdown();
+            let active_filter = table_export.get_active_filter();
+            let initial_name = if active_filter != CrawlFilter::All {
+                format!("tadpole_{}.csv", active_filter.slug())
+            } else {
+                "tadpole_crawl_results.csv".to_string()
+            };
+            let title = if active_filter != CrawlFilter::All {
+                format!("Export {} to CSV", active_filter.name())
+            } else {
+                "Export crawl to CSV".to_string()
+            };
+
             let dialog = gtk::FileDialog::new();
-            dialog.set_title("Export crawl to CSV");
-            dialog.set_initial_name(Some("crawl_results.csv"));
+            dialog.set_title(&title);
+            dialog.set_initial_name(Some(&initial_name));
             let filter = gtk::FileFilter::new();
             filter.set_name(Some("CSV Files"));
             filter.add_pattern("*.csv");
@@ -1148,11 +1280,14 @@ impl MainWindow {
             dialog.set_filters(Some(&filters));
 
             let table_inner = table_export.clone();
+            let status_inner = status_label_csv.clone();
             dialog.save(Some(&parent_win_export), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
                         if let Err(e) = table_inner.export_to_csv(&path) {
-                            eprintln!("Failed to export CSV: {}", e);
+                            status_inner.set_text(&format!("Failed to export CSV: {}", e));
+                        } else {
+                            status_inner.set_text(&format!("Successfully exported CSV to {}", path.display()));
                         }
                     }
                 }
@@ -1355,6 +1490,10 @@ impl MainWindow {
             });
         });
 
+        // Tracking crawl velocity and samples for telemetry
+        let crawl_start_time = Rc::new(RefCell::new(Option::<std::time::Instant>::None));
+        let crawl_samples = Rc::new(RefCell::new(std::collections::VecDeque::<(std::time::Instant, usize)>::new()));
+
         // Attach receiver to GLib event loop using spawn_local
         let start_button_clone = start_button.clone();
         let pause_button_clone = pause_button.clone();
@@ -1364,6 +1503,8 @@ impl MainWindow {
         let sidebar_clone = sidebar.clone();
         let state_clone = state.clone();
         let summary_panel_clone = summary_panel.clone();
+        let crawl_start_time_clone = crawl_start_time.clone();
+        let crawl_samples_clone = crawl_samples.clone();
 
         glib::MainContext::default().spawn_local(async move {
             while let Some(update) = rx.recv().await {
@@ -1376,15 +1517,77 @@ impl MainWindow {
                         sidebar_clone.update_counts(&state_clone);
                         summary_panel_clone.update(&state_clone);
 
-                        // Update stats in status label & progress bar
                         let stats = state_clone.get_stats();
+                        let now = std::time::Instant::now();
+                        {
+                            let mut samples = crawl_samples_clone.borrow_mut();
+                            samples.push_back((now, stats.crawled));
+                            while let Some(&(t, _)) = samples.front() {
+                                if now.duration_since(t).as_secs_f64() > 5.0 && samples.len() > 1 {
+                                    samples.pop_front();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        let speed_urls_per_sec = {
+                            let samples = crawl_samples_clone.borrow();
+                            if samples.len() >= 2 {
+                                let (t_first, c_first) = samples.front().unwrap();
+                                let (t_last, c_last) = samples.back().unwrap();
+                                let dt = t_last.duration_since(*t_first).as_secs_f64();
+                                let dc = c_last.saturating_sub(*c_first);
+                                if dt > 0.4 {
+                                    dc as f64 / dt
+                                } else {
+                                    0.0
+                                }
+                            } else if let Some(start_t) = *crawl_start_time_clone.borrow() {
+                                let dt = now.duration_since(start_t).as_secs_f64();
+                                if dt > 0.4 {
+                                    stats.crawled as f64 / dt
+                                } else {
+                                    0.0
+                                }
+                            } else {
+                                0.0
+                            }
+                        };
+
+                        let limit = state_clone.get_limit();
+                        let total_expected = stats.discovered.min(limit);
+                        let queue_depth = total_expected.saturating_sub(stats.crawled);
+
+                        let eta_str = if speed_urls_per_sec > 0.1 && queue_depth > 0 {
+                            let eta_secs = (queue_depth as f64 / speed_urls_per_sec) as u64;
+                            if eta_secs < 60 {
+                                format!("~{}s", eta_secs)
+                            } else if eta_secs < 3600 {
+                                format!("~{}m {:02}s", eta_secs / 60, eta_secs % 60)
+                            } else {
+                                format!("~{}h {:02}m", eta_secs / 3600, (eta_secs % 3600) / 60)
+                            }
+                        } else if queue_depth == 0 {
+                            "finishing...".to_string()
+                        } else {
+                            "—".to_string()
+                        };
+
+                        let rate_str = if speed_urls_per_sec > 0.05 {
+                            format!("{:.1} URLs/s", speed_urls_per_sec)
+                        } else {
+                            "starting...".to_string()
+                        };
+
                         status_label_clone.set_text(&format!(
-                            "Crawled: {} / Discovered: {} | 2xx: {} | 3xx: {} | 4xx: {} | 5xx: {} | Errors: {}",
-                            stats.crawled, stats.discovered, stats.status_2xx, stats.status_3xx, stats.status_4xx, stats.status_5xx, stats.errors
+                            "Crawled: {} / {} | {} | Queue: {} | ETA: {} | 2xx: {} | 3xx: {} | 4xx: {} | 5xx: {} | Err: {}",
+                            stats.crawled, stats.discovered, rate_str, queue_depth, eta_str,
+                            stats.status_2xx, stats.status_3xx, stats.status_4xx, stats.status_5xx, stats.errors
                         ));
 
                         let fraction = if stats.discovered > 0 {
-                            (stats.crawled as f64) / (stats.discovered as f64).min(state_clone.get_limit() as f64)
+                            (stats.crawled as f64) / (stats.discovered as f64).min(limit as f64)
                         } else {
                             0.0
                         };
@@ -1394,9 +1597,22 @@ impl MainWindow {
                         progress_bar_clone.set_visible(false);
                         start_button_clone.set_label("Start");
                         start_button_clone.set_sensitive(true);
+                        start_button_clone.remove_css_class("destructive-action");
                         pause_button_clone.set_sensitive(false);
                         pause_button_clone.set_label("Pause");
-                        status_label_clone.set_text("Crawl completed.");
+
+                        let stats = state_clone.get_stats();
+                        let elapsed_msg = if let Some(start_t) = *crawl_start_time_clone.borrow() {
+                            let dt = start_t.elapsed().as_secs_f64();
+                            let avg_speed = if dt > 0.1 { stats.crawled as f64 / dt } else { 0.0 };
+                            format!(" in {:.1}s ({:.1} URLs/s)", dt, avg_speed)
+                        } else {
+                            String::new()
+                        };
+                        status_label_clone.set_text(&format!(
+                            "Crawl completed: {} URLs crawled{}. Total discovered: {}.",
+                            stats.crawled, elapsed_msg, stats.discovered
+                        ));
                         summary_panel_clone.update(&state_clone);
                     }
                 }
@@ -1416,6 +1632,9 @@ impl MainWindow {
         let summary_panel_start = summary_panel.clone();
         let loaded_list_urls_start = loaded_list_urls.clone();
         let link_opps_start = link_opps.clone();
+        let window_start = self.window.clone();
+        let crawl_start_time_start = crawl_start_time.clone();
+        let crawl_samples_start = crawl_samples.clone();
 
         start_button.connect_clicked(move |btn| {
             let is_crawling = state_start.is_crawling();
@@ -1427,7 +1646,7 @@ impl MainWindow {
                 btn.set_label("Stopping...");
                 pause_button_start.set_sensitive(false);
             } else {
-                // Start a new crawl
+                // Pre-validate input URL
                 let config = state_start.get_config();
                 let urls_str = if config.crawl_mode == CrawlMode::List {
                     let urls = loaded_list_urls_start.borrow();
@@ -1437,37 +1656,93 @@ impl MainWindow {
                     }
                     urls.join("\n")
                 } else {
-                    let url = address_entry_start.text().to_string().trim().to_string();
-                    if url.is_empty() {
+                    let raw_url = address_entry_start.text().to_string().trim().to_string();
+                    if raw_url.is_empty() {
+                        status_label_start.set_text("Please enter a URL to audit (e.g. https://example.com).");
                         return;
                     }
-                    url
+                    let cleaned = crate::crawler::clean_seed_url(&raw_url);
+                    match url::Url::parse(&cleaned) {
+                        Ok(parsed) => {
+                            if parsed.host_str().is_none() {
+                                status_label_start.set_text("Please enter a valid website address (e.g. https://example.com).");
+                                return;
+                            }
+                        }
+                        Err(_) => {
+                            status_label_start.set_text("Invalid URL format. Please enter a valid address (e.g. https://example.com).");
+                            return;
+                        }
+                    }
+                    raw_url
                 };
 
-                // Clean state and view
-                state_start.reset();
-                table_start.clear();
-                details_start.clear();
-                link_opps_start.clear();
-                sidebar_start.update_counts(&state_start);
-                summary_panel_start.update(&state_start);
+                let do_start = {
+                    let state_start = state_start.clone();
+                    let table_start = table_start.clone();
+                    let details_start = details_start.clone();
+                    let link_opps_start = link_opps_start.clone();
+                    let sidebar_start = sidebar_start.clone();
+                    let summary_panel_start = summary_panel_start.clone();
+                    let pause_button_start = pause_button_start.clone();
+                    let progress_bar_start = progress_bar_start.clone();
+                    let status_label_start = status_label_start.clone();
+                    let crawl_start_time = crawl_start_time_start.clone();
+                    let crawl_samples = crawl_samples_start.clone();
+                    let tx_worker = tx_clone.clone();
+                    let btn = btn.clone();
 
-                btn.set_label("Stop");
-                btn.add_css_class("destructive-action");
-                pause_button_start.set_sensitive(true);
-                pause_button_start.set_label("Pause");
-                progress_bar_start.set_visible(true);
-                progress_bar_start.set_fraction(0.0);
-                status_label_start.set_text("Crawling started...");
+                    move |urls: String| {
+                        state_start.reset();
+                        table_start.clear();
+                        details_start.clear();
+                        link_opps_start.clear();
+                        sidebar_start.update_counts(&state_start);
+                        summary_panel_start.update(&state_start);
 
-                let state_clone = state_start.clone();
-                let tx_worker = tx_clone.clone();
+                        *crawl_start_time.borrow_mut() = Some(std::time::Instant::now());
+                        crawl_samples.borrow_mut().clear();
 
-                // Spawn the crawler on background Tokio task pool
-                tokio::spawn(async move {
-                    let crawler = Crawler::new(state_clone, tx_worker);
-                    crawler.start(urls_str).await;
-                });
+                        btn.set_label("Stop");
+                        btn.add_css_class("destructive-action");
+                        pause_button_start.set_sensitive(true);
+                        pause_button_start.set_label("Pause");
+                        progress_bar_start.set_visible(true);
+                        progress_bar_start.set_fraction(0.0);
+                        status_label_start.set_text("Crawling started...");
+
+                        let state_clone = state_start.clone();
+                        tokio::spawn(async move {
+                            let crawler = Crawler::new(state_clone, tx_worker);
+                            crawler.start(urls).await;
+                        });
+                    }
+                };
+
+                let existing_count = state_start.get_all_results().len();
+                if existing_count > 0 {
+                    let alert = adw::AlertDialog::new(
+                        Some("Discard Current Crawl Results?"),
+                        Some(&format!(
+                            "Starting a new crawl will permanently discard {} crawled URLs and audit data.",
+                            existing_count
+                        )),
+                    );
+                    alert.add_response("cancel", "Cancel");
+                    alert.add_response("discard", "Discard and Start");
+                    alert.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+                    alert.set_default_response(Some("cancel"));
+                    alert.set_close_response("cancel");
+
+                    let urls_for_alert = urls_str.clone();
+                    alert.choose(Some(&window_start), None::<&gio::Cancellable>, move |response| {
+                        if response == "discard" {
+                            do_start(urls_for_alert);
+                        }
+                    });
+                } else {
+                    do_start(urls_str);
+                }
             }
         });
 
