@@ -46,7 +46,10 @@ pub struct VisualizerWindow {
 }
 
 impl VisualizerWindow {
-    pub fn new(parent: &(impl IsA<gtk::Window> + IsA<glib::Object>), crawl_state: CrawlState) -> Self {
+    pub fn new(
+        parent: &(impl IsA<gtk::Window> + IsA<glib::Object>),
+        crawl_state: CrawlState,
+    ) -> Self {
         // Fully Responsive Default Window Sizing (Allows shrinking down to 800px width)
         let window = gtk::Window::builder()
             .title("Domain Structure Visualizer — Directory Icicle Plot")
@@ -100,7 +103,10 @@ impl VisualizerWindow {
             .build();
         toolbar.append(&icicle_up_btn);
 
-        let reset_btn = gtk::Button::builder().label("Reset Zoom").tooltip_text("Reset to Root /").build();
+        let reset_btn = gtk::Button::builder()
+            .label("Reset Zoom")
+            .tooltip_text("Reset to Root /")
+            .build();
         toolbar.append(&reset_btn);
 
         let search_entry = gtk::SearchEntry::builder()
@@ -136,7 +142,8 @@ impl VisualizerWindow {
         toolbar.append(&export_menu_btn);
 
         // Compact Legend Label
-        let legend_lbl = gtk::Label::new(Some("● 2xx OK  ● 3xx Redirect  ● 4xx/5xx Error  ● Noindex"));
+        let legend_lbl =
+            gtk::Label::new(Some("● 2xx OK  ● 3xx Redirect  ● 4xx/5xx Error  ● Noindex"));
         legend_lbl.add_css_class("dim-label");
         legend_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
         legend_lbl.set_hexpand(true);
@@ -193,7 +200,8 @@ impl VisualizerWindow {
         status_bar.set_margin_end(6);
         status_bar.set_margin_top(2);
         status_bar.set_margin_bottom(2);
-        let status_text = gtk::Label::new(Some("Ready | Click directory block to drill down / zoom"));
+        let status_text =
+            gtk::Label::new(Some("Ready | Click directory block to drill down / zoom"));
         status_text.add_css_class("dim-label");
         status_bar.append(&status_text);
         main_box.append(&status_bar);
@@ -362,7 +370,6 @@ impl VisualizerWindow {
             area_reset.queue_draw();
         });
 
-
         // Export CSV Nodes Button
         let state_exp_nodes = state.clone();
         let parent_win_nodes = window.clone();
@@ -374,13 +381,17 @@ impl VisualizerWindow {
                 dialog.set_initial_name(Some("nodes_export.csv"));
 
                 let snap = snapshot.clone();
-                dialog.save(Some(&parent_win_nodes), gio::Cancellable::NONE, move |res| {
-                    if let Ok(file) = res {
-                        if let Some(path) = file.path() {
-                            let _ = export_nodes_to_csv(&snap, &path.to_string_lossy());
+                dialog.save(
+                    Some(&parent_win_nodes),
+                    gio::Cancellable::NONE,
+                    move |res| {
+                        if let Ok(file) = res {
+                            if let Some(path) = file.path() {
+                                let _ = export_nodes_to_csv(&snap, &path.to_string_lossy());
+                            }
                         }
-                    }
-                });
+                    },
+                );
             }
         });
 
@@ -395,13 +406,17 @@ impl VisualizerWindow {
                 dialog.set_initial_name(Some("edges_export.csv"));
 
                 let snap = snapshot.clone();
-                dialog.save(Some(&parent_win_edges), gio::Cancellable::NONE, move |res| {
-                    if let Ok(file) = res {
-                        if let Some(path) = file.path() {
-                            let _ = export_edges_to_csv(&snap, &path.to_string_lossy());
+                dialog.save(
+                    Some(&parent_win_edges),
+                    gio::Cancellable::NONE,
+                    move |res| {
+                        if let Ok(file) = res {
+                            if let Some(path) = file.path() {
+                                let _ = export_edges_to_csv(&snap, &path.to_string_lossy());
+                            }
                         }
-                    }
-                });
+                    },
+                );
             }
         });
 
@@ -504,7 +519,9 @@ impl VisualizerWindow {
         container.append(&sub_title);
 
         if icicle_node.children.is_empty() {
-            let no_child = gtk::Label::new(Some("No deeper sub-directories. Click '⬆ Up Directory' to zoom out."));
+            let no_child = gtk::Label::new(Some(
+                "No deeper sub-directories. Click '⬆ Up Directory' to zoom out.",
+            ));
             no_child.add_css_class("dim-label");
             no_child.set_wrap(true);
             container.append(&no_child);
@@ -512,7 +529,10 @@ impl VisualizerWindow {
             let child_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
             for child in &icicle_node.children {
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                let lbl = gtk::Label::new(Some(&format!("📁 {} ({} pages)", child.name, child.total_pages)));
+                let lbl = gtk::Label::new(Some(&format!(
+                    "📁 {} ({} pages)",
+                    child.name, child.total_pages
+                )));
                 lbl.set_halign(gtk::Align::Start);
                 row.append(&lbl);
                 child_box.append(&row);
@@ -555,7 +575,9 @@ impl VisualizerWindow {
 
         for child in &node.children {
             let child_w = (child.weight_value / total_weight) * w;
-            if let Some(hit) = Self::hit_test_icicle(child, click_x, click_y, curr_x, y, child_w, h, depth + 1) {
+            if let Some(hit) =
+                Self::hit_test_icicle(child, click_x, click_y, curr_x, y, child_w, h, depth + 1)
+            {
                 return Some(hit);
             }
             curr_x += child_w;

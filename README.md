@@ -1,212 +1,77 @@
-<p align="center">
-  <img src="tadpolelogonobg.png" alt="Tadpole Logo" width="160">
-</p>
+<p align="center"><img src="tadpolelogonobg.png" alt="Tadpole" width="140"></p>
 
-<h1 align="center">Tadpole</h1>
+# Tadpole
 
-<p align="center">
-  <b>A native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita.</b><br>
-  <i>A simple, fast, and visual way to crawl websites, inspect SEO, analyze schema data, download clean Markdown copies of your pages, and identify internal linking opportunities.</i>
-</p>
+A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a website, inspect its internal links and structured data, export page content, or research a topic in SEO Studio.
 
-<p align="center">
-  <a href="https://snapcraft.io/tadpole">
-    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store">
-  </a>
-</p>
+[Downloads](https://github.com/piotrowskiadam/Tadpole/releases) · [Issue tracker](https://github.com/piotrowskiadam/Tadpole/issues) · [Developer guide](docs/DEVELOPMENT.md) · [Architecture](ARCHITECTURE.md) · [Modernization audit](docs/AUDIT.md)
 
-<p align="center">
-  <a href="https://ko-fi.com/B5Z022ZL32" target="_blank">
-    <img src="https://storage.ko-fi.com/cdn/brandasset/v2/support_me_on_kofi_blue.png" alt="Support Me on Ko-fi" height="36" style="border:0px; height:36px;">
-  </a>
-</p>
+## Website audits
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/GTK-4.0-orange" alt="GTK 4.0">
-  <img src="https://img.shields.io/badge/Libadwaita-1.5-blue" alt="Libadwaita 1.5">
-  <img src="https://img.shields.io/badge/Language-Rust-red" alt="Rust">
-  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License: MIT">
-</p>
+- Crawl a site, a path, one URL, or an explicit list of URLs.
+- Configure URL/depth limits, concurrency, include/exclude regular expressions, redirects and robots.txt handling.
+- Inspect HTTP status, titles, descriptions, canonical URLs, indexability, headings, images, Open Graph/Twitter metadata and JSON-LD syntax.
+- Search and filter results; export the filtered table to CSV or copy it to a spreadsheet.
+- Inspect Markdown extracted from the main page content and export it to files with collision-resistant names.
+- Find internal-link opportunities and recurring phrases in titles/headings.
+- Explore URL directory structure in the native Cairo icicle visualizer.
+- Save and reopen `.seocrawl` projects. API credentials are excluded from these files.
 
-<br>
+SEO health is a local heuristic, not a Google score. Schema diagnostics check syntax and selected fields; they do not certify rich-result eligibility. A crawl cannot discover truly orphaned pages that have no links from the seed; provide those URLs in List mode.
 
-<p align="center">
-  <img src="CrawlInProgressScreenshot.png" alt="Tadpole Crawl in Progress" width="800">
-</p>
+## SEO Studio: content briefs and Google SERP
 
-Tadpole is a native desktop SEO crawler and site auditor built in Rust and GTK4/Libadwaita. It replaces slow, resource-heavy SEO tools with a fast, modern, and privacy-respecting native experience. Optimized for developers, SEO specialists, and content editors who want to run diagnostics locally, analyze internal link opportunities, and scrape/download clean Markdown copies of their pages.
+Choose **SEO Studio** in the header. It works independently of a crawl.
 
-## Why Tadpole?
+1. In **Preferences → AI Assistant**, choose OpenRouter or OpenAI, enter your key, and select a model (or enter a custom model ID).
+2. Optionally enter your **DataForSEO API login and password** on the same preferences page. These differ from some account login credentials; use [API access](https://app.dataforseo.com/api-access).
+3. Enter a topic/keyword and choose Poland/Polish, United States/English, or United Kingdom/English.
+4. **Fetch Google SERP** sends one DataForSEO Live Advanced request with depth 10. The report includes organic results, snippets, URLs and the task cost returned by DataForSEO.
+5. **Generate content brief** sends one completion request to the chosen AI provider. It can use the SERP evidence and, if selected, content from the page selected when Studio opened. Without SERP evidence, competitive/search-intent suggestions are explicitly treated as hypotheses.
+6. Review the result and copy it or save it as Markdown. The brief includes intent, audience, metadata, outline, questions, differentiation, internal-link suggestions and a fact-check checklist.
 
-Tadpole delivers direct, actionable SEO value to your local workflow with no subscriptions or server-side limitations:
+Changing the keyword or market invalidates the SERP evidence. Reports remain separate: generating a brief never overwrites the source SERP report. Brief output follows the selected market language. To include a different page, select it in the crawl table and reopen Studio.
 
-* **Instant Markdown Scraping:** Scrape and save clean page body text into markdown files. Perfect for archiving, content automation, or feeding directly into AI agents and LLM prompts.
-* **Domain-wide Key Issue Export:** Generate comprehensive CSV spreadsheets detailing Canonical errors, Indexability statuses, Schema syntax issues, missing metadata, and heading hierarchy trees.
-* **Internal Link Diagnostics & N-grams:** Uncover missing link opportunities and view popular themes (N-grams) across titles and headings to quickly plan your keyword anchors.
-* **Low-Cost, Native Performance:** Run local audits with zero tracking, zero accounts, and extremely low system memory usage.
+**Privacy and cost:** ordinary crawling stays local apart from requests to the crawled websites. Clicking an AI action sends the displayed topic/context to your selected provider; fetching SERP sends the keyword/market to DataForSEO. Providers bill your account. There are no automatic paid requests or application-level retries. Completion input/output and response sizes are bounded, but token limits do not guarantee a fixed monetary cost. Credentials are held in memory for the session and must be entered again after restarting. They are never serialized, imported from old project keys, or included in config debug output. Older project files created by previous versions may already contain keys; remove those keys and rotate them if the files were shared.
 
----
+Existing title and description suggestions now use crawled content as context. Image alt-text suggestions remain text-only suggestions based on image URL/page context; they do not inspect image pixels.
 
-## Download
+## Build and run
 
-You can download the latest pre-compiled binaries and installers for all supported platforms directly from the [Releases](https://github.com/piotrowskiadam/Tadpole/releases) page.
+Install a current stable Rust toolchain (edition 2024), GTK **4.12+**, Libadwaita **1.5+**, a C compiler and pkg-config. A graphical desktop is required for the application.
 
-### Available Packages
+Ubuntu 24.04:
 
-Tadpole release assets are built and published automatically for the following formats:
-
-| OS | Format | Type | Installation / Run Command |
-| :--- | :--- | :--- | :--- |
-| **Linux** | **AppImage** (`.AppImage`) | Portable Standalone Binary | `chmod +x Tadpole-*.AppImage && ./Tadpole-*.AppImage` |
-| **Linux** | **Debian** (`.deb`) | Native Package (Debian/Ubuntu) | `sudo dpkg -i tadpole_*.deb` |
-| **Linux** | **RPM** (`.rpm`) | Native Package (Fedora/RHEL) | `sudo rpm -i tadpole-*.rpm` |
-| **Linux** | **Snap** (`.snap`) | Strictly Confined Snap | `sudo snap install tadpole_*.snap --dangerous` |
-| **Windows** | **Setup Installer** (`.exe`) | Executable Installer | Run `TadpoleSetup.exe` to install and create shortcuts |
-| **Windows** | **Standalone Archive** (`.zip`) | Standalone Folder | Unzip `tadpole-windows.zip` and run `tadpole.exe` |
-
----
-
-## Key Features
-
-### 1. Multi-Mode Crawling
-- **Crawl Mode**: Recursively crawls and discovers internal links starting from a seed URL.
-- **List Mode**: Audits a predefined list of static URLs entered manually or loaded from a local text file.
-- **Path Mode**: Restricts crawls only to pages belonging to the same subfolder category (prefix path) as the seed URL.
-- **URL Mode**: Single URL inspection; crawls only the seed page and stops.
-
-### 2. Live SEO Diagnostics Grid
-- **Comprehensive Auditing**: Inspect status codes, indexability, canonical URLs, page titles, meta descriptions, H1/H2 tags, word counts, and page sizes.
-- **Advanced Metrics**: Tracks both **Crawl Depth** (number of hops from seed) and **Response Time (ms)**.
-- **Search & Filter**: Find matches instantly across all crawled columns using a live search entry box, or apply left-sidebar filters (such as showing only pages missing canonical tags or structured data errors).
-
-### 3. SEO Health Dashboard
-- **SEO Health Score**: Computes a live health rating based on issue frequencies.
-- **Response Metrics**: Average response times, page sizes, and word counts.
-- **Depth Distribution**: Visual distribution graph rendered dynamically using Cairo.
-
-### 4. Social & Open Graph Audit
-- **Metadata Extraction**: Parsed Open Graph (`og:title`, `og:description`, `og:image`, `og:url`, `og:type`) and Twitter Card metadata.
-- **Diagnostic tab**: Shows social tags, active warning indicators (such as mismatches between standard titles/descriptions and their social equivalents), and missing essentials.
-
-### 5. Schema & Structured Data Checker
-- **JSON-LD Schema Extraction**: Extracts nested JSON-LD schema blocks from pages.
-- **Syntax Highlighting**: Monospace code editor with real-time character-offset syntax highlighting for pretty-printed raw JSON.
-- **Combined View**: Visually separated "Combined View" section that merges all JSON-LD schemas into a single array for overall inspection, alongside a list of individual schema blocks.
-- **Validation Errors**: Evaluates structures for `@context` validity and `@type` presence.
-
-### 6. Headings Outline Tab
-- **Hierarchy Tree**: Displays headings (`H1` to `H6`) in document order.
-- **Copy Outline**: A toolbar button that copies the structured heading tree to the clipboard with indentation. Includes visual "Copied!" feedback.
-
-### 7. AI Metadata Assistant
-- **Optimized Suggestions**: Integrates with OpenAI and OpenRouter to analyze page content and suggest optimized metadata.
-- **Dynamic Model Selector**: Dropdown selection displaying active provider models with a background refresh mechanism, search/filter entry, and custom model inputs.
-
-### 8. Markdown Scraping & Exporter
-- **Page Content Conversion**: Extracts core article/body text (filtering headers, footers, navigation, sidebars, and custom CSS selectors) and converts it to clean GitHub Flavored Markdown (GFM).
-- **Tab Preview**: Shows a monospace preview of the page's Markdown content under the details panel, with options to copy to clipboard or save to a file.
-- **Batch Directory Export**: Click the export dropdown in the header bar to export all crawled pages to a selected folder as separate `<slug>.md` files.
-
-### 9. Internal Linking Diagnostics & N-grams (beta)
-- **Link Opportunities**: Scans indexable 2xx pages, extracts target keywords from titles/headings, and finds pages mentioning those keywords that do not currently link to the target page.
-- **N-gram Analyzer**: Extracts common phrases (1 to 4 words) from site headings and titles to reveal keyword density and top themes.
-- **Responsive Details Integration**: Selecting any opportunity loads that page's diagnostics details immediately in the bottom panel.
-- **CSV Exporter**: Export the entire linking report to a CSV file.
-
-### 10. Visual Site Map & 3D Constellation Visualizer (Pop-up Window)
-- **Recursive Directory Tree Mode**: Parses site URLs into a recursive N-level tree directory (Root → Subdirectories → Child Subdirectories → Pages) with smooth organic Bezier curve branch connectors (`cairo.curve_to`).
-- **3D Site Constellation (TensorFlow Projector Mode)**: Interactive 3D spatial cluster visualization in $(X,Y,Z)$ with 3D camera orbit rotation (mouse drag), dolly zoom (scroll wheel), and depth attenuation fog.
-- **Smart Level-of-Detail (LOD) Label Culling**: Automatically hides background text label clutter to maintain 60+ FPS performance and crystal-clear legibility. Hovering or clicking any node pops up its text label and populates its full audit details in the main window.
-- **SEO Health Encodings**: Sizes node radii logarithmically by total branch pages / internal links, and highlights broken directory branches in red (4xx/5xx errors) or orange (3xx redirects).
-
-### 11. Comprehensive SEO CSV Audit
-- **34 Columns of Data**: Export complete details for every single crawled page, including:
-  - Meta titles and descriptions, along with their character lengths.
-  - All internal links pointing to a page (`Inlinks`) and all links pointing outward (`Outlinks`).
-  - Image paths paired with their `alt` text.
-  - Social sharing (Open Graph and Twitter) tags.
-  - A formatted tree of headings in document order (e.g., `H1: text | H2: text`).
-  - Merged raw JSON-LD schemas and schema validation errors.
-  - Word count, response times, sizes, depths, indexability status, and canonical URLs.
-
----
-
-## System Requirements
-
-### Linux
-- GTK4 (`libgtk-4-dev`)
-- Libadwaita (`libadwaita-1-dev`)
-- Rust toolchain (2024 edition)
-
-### Windows
-- MSYS2 (with MinGW64 toolchain)
-
----
-
-## How to Build and Run
-
-### Running Locally (Linux / Development)
-Ensure GTK4 and Libadwaita development libraries are installed, then run:
-
-```bash
-cargo run
+```sh
+sudo apt-get install build-essential pkg-config libgtk-4-dev libadwaita-1-dev
+cargo run --locked
 ```
 
-### Packaging for Linux
+Fedora:
 
-Tadpole supports multiple native package formats on Linux:
-
-#### Snap Package
-Ensure `snapcraft` is installed on your Linux system, then build the snap package locally using:
-```bash
-snapcraft
+```sh
+sudo dnf install gcc pkgconf-pkg-config gtk4-devel libadwaita-devel
+cargo run --locked
 ```
 
-#### Debian Package (.deb)
-Install `cargo-deb` (e.g. `cargo install cargo-deb`), then build the package using:
-```bash
-cargo deb
+A headless core build/test needs no GTK development packages:
+
+```sh
+cargo test --locked --no-default-features
 ```
-The resulting `.deb` package will be saved in `target/debian/`.
 
-#### RPM Package (.rpm)
-Install `cargo-generate-rpm` (e.g. `cargo install cargo-generate-rpm`), then compile and build the package using:
-```bash
-cargo build --release
-cargo generate-rpm
-```
-The resulting `.rpm` package will be saved in `target/generate-rpm/`.
+Optional JavaScript rendering needs an installed Chrome/Chromium discoverable by `headless_chrome`. It is not bundled. See the [developer guide](docs/DEVELOPMENT.md) for checks, preview rendering, packaging and known limitations.
 
-#### AppImage (.AppImage)
-To package Tadpole as a portable, standalone Linux binary:
-```bash
-./build_appimage.sh
-```
-The script structures the AppDir and compiles the final `Tadpole-x86_64.AppImage` automatically (downloading `appimagetool` internally if not present on your system).
+## Packages
 
----
+Release workflows run on version tags and build Linux DEB/RPM/AppImage/Snap and Windows ZIP/Inno Setup installers. Package availability depends on successful release jobs; see the actual [release assets](https://github.com/piotrowskiadam/Tadpole/releases).
 
-### Packaging for Windows
+- Linux: `cargo build --release --locked`, then `cargo deb`, `cargo generate-rpm`, `./build_appimage.sh`, or `snapcraft` as appropriate.
+- Windows: install MSYS2 and Inno Setup, then run `build_windows.ps1` from the repository directory.
+- The current AppImage script packages the application and icon; it **does not bundle GTK/Libadwaita**, so it requires compatible host libraries.
 
-Tadpole is compiled on Windows inside the MSYS2 environment. It bundles the required DLLs and schemas automatically, and compiles a single-file executable installer using Inno Setup.
+## Contributing
 
-1. Install [MSYS2](https://www.msys2.org/) to `C:\msys64`.
-2. Install [Inno Setup](https://jrsoftware.org/isinfo.php) on your Windows machine to generate the installer.
-3. Open PowerShell in the project root directory.
-4. Run the packaging script:
-   ```powershell
-   .\build_windows.ps1
-   ```
-5. The standalone folder, the zip package, and the single-file setup installer (`TadpoleSetup.exe`) will be generated inside the `dist/` directory.
+Read [DEVELOPMENT.md](docs/DEVELOPMENT.md) before changing execution or persistence behavior. Include a regression test for fixes to crawling, parsing, provider responses or stored data. Keep paid-provider tests offline with fixtures or a local HTTP server. Do not commit credentials, real crawl files or generated packages.
 
----
-
-### Automated CI/CD Releases (GitHub Actions)
-A GitHub Actions workflow is configured in `.github/workflows/release.yml`. Whenever you push a version tag (e.g. `v0.1.0`), the pipeline automatically builds the Snap, Debian, RPM, AppImage, ZIP, and Inno Setup EXE installer packages, publishing all of them directly as release assets.
-
----
-
-### Built with AI Assistance
-
-Tadpole has been designed, implemented, and packaged with significant assistance from advanced AI coding agents, showcasing a modern workflow of developer-AI pair programming.
+MIT licensed. Built with AI assistance.

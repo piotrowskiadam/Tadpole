@@ -11,25 +11,28 @@ pub mod sections;
 pub mod snapshot;
 pub mod synthetic;
 
-
 use std::sync::Arc;
 
 pub use builder::SnapshotBuilder;
-pub use cache::{compute_graph_fingerprint, LayoutCache};
+pub use cache::{LayoutCache, compute_graph_fingerprint};
 pub use filters::{FilterMode, FilterResult, GraphFilter};
-pub use icicle::{build_icicle_tree_from_results, build_icicle_tree_from_snapshot, IcicleTreeNode, IcicleWeightMetric};
-pub use layout::{compute_layout, LayoutResult, LayoutType, NodePosition};
-pub use pagerank::{calculate_internal_rank, PageRankConfig};
-pub use protocol::{RustToRendererMessage, PROTOCOL_VERSION};
+pub use icicle::{
+    IcicleTreeNode, IcicleWeightMetric, build_icicle_tree_from_results,
+    build_icicle_tree_from_snapshot,
+};
+pub use layout::{LayoutResult, LayoutType, NodePosition, compute_layout};
+pub use pagerank::{PageRankConfig, calculate_internal_rank};
+pub use protocol::{PROTOCOL_VERSION, RustToRendererMessage};
 pub use renderer::{CairoCanvasRenderer, VisualizationRenderer};
-pub use sections::{build_supernode_graph, SectionSummary, SupernodeGraph};
-pub use snapshot::{GraphMetrics, GraphSnapshot, NodeId, SectionId, SiteEdge, SiteNode, StringTable};
+pub use sections::{SectionSummary, SupernodeGraph, build_supernode_graph};
+pub use snapshot::{
+    GraphMetrics, GraphSnapshot, NodeId, SectionId, SiteEdge, SiteNode, StringTable,
+};
 
 pub struct DomainVisualizationModule {
     snapshot: Option<GraphSnapshot>,
     layout_cache: LayoutCache,
     current_filter: GraphFilter,
-    active_layout: LayoutType,
     selected_node: Option<NodeId>,
 }
 
@@ -45,12 +48,13 @@ impl DomainVisualizationModule {
             snapshot: None,
             layout_cache: LayoutCache::new(),
             current_filter: GraphFilter::default(),
-            active_layout: LayoutType::ForceAtlas2,
             selected_node: None,
         }
     }
 
     pub fn load_snapshot(&mut self, snapshot: GraphSnapshot) {
+        self.layout_cache.clear();
+        self.selected_node = None;
         self.snapshot = Some(snapshot);
     }
 
@@ -61,7 +65,7 @@ impl DomainVisualizationModule {
     pub fn compute_internal_rank(&mut self, config: &PageRankConfig) -> Vec<f32> {
         if let Some(ref snapshot) = self.snapshot {
             let ranks = calculate_internal_rank(snapshot, config);
-            
+
             // If snapshot is mutable or can be cloned, update ranks
             if let Some(mut_snapshot) = self.snapshot.as_mut() {
                 let mut nodes: Vec<SiteNode> = mut_snapshot.nodes.iter().cloned().collect();
@@ -72,7 +76,7 @@ impl DomainVisualizationModule {
                 }
                 mut_snapshot.nodes = Arc::from(nodes);
             }
-            
+
             ranks
         } else {
             Vec::new()
@@ -92,7 +96,8 @@ impl DomainVisualizationModule {
         }
 
         let result = compute_layout(snapshot, layout_type, seed);
-        self.layout_cache.insert(fp, layout_type, seed, result.clone());
+        self.layout_cache
+            .insert(fp, layout_type, seed, result.clone());
         Some(result)
     }
 

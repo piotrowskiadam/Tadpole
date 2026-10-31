@@ -1,6 +1,6 @@
+use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ImageInfo {
@@ -12,7 +12,7 @@ pub struct ImageInfo {
 /// A single heading element (H1–H6) extracted in document order.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HeadingEntry {
-    pub level: u8,    // 1–6
+    pub level: u8, // 1–6
     pub text: String,
 }
 
@@ -118,7 +118,8 @@ pub enum CrawlMode {
     Url,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct CrawlConfig {
     pub max_urls: usize,
     pub max_concurrency: usize,
@@ -129,16 +130,21 @@ pub struct CrawlConfig {
     pub extract_microdata: bool,
     pub include_regex: Option<String>,
     pub exclude_regex: Option<String>,
-    
+
     // AI Settings
     pub ai_provider: String, // "OpenAI" or "OpenRouter"
+    #[serde(skip)]
     pub ai_api_key: Option<String>,
+    #[serde(skip)]
+    pub dataforseo_login: Option<String>,
+    #[serde(skip)]
+    pub dataforseo_password: Option<String>,
     pub ai_model: String, // e.g. "gpt-4o"
-    
+
     // Image downloads
     pub download_images: bool,
     pub project_dir: Option<String>,
-    
+
     // Advanced/Mode settings
     pub crawl_mode: CrawlMode,
     pub max_depth: Option<usize>,
@@ -158,7 +164,12 @@ impl Default for CrawlConfig {
         Self {
             max_urls: 500,
             max_concurrency: 4,
-            user_agent: "Tadpole/0.1 (Desktop SEO Auditor)".to_string(),
+            user_agent: concat!(
+                "Tadpole/",
+                env!("CARGO_PKG_VERSION"),
+                " (Desktop SEO Auditor)"
+            )
+            .to_string(),
             respect_robots: true,
             follow_redirects: true,
             js_rendering: false,
@@ -167,6 +178,8 @@ impl Default for CrawlConfig {
             exclude_regex: None,
             ai_provider: "OpenAI".to_string(),
             ai_api_key: None,
+            dataforseo_login: None,
+            dataforseo_password: None,
             ai_model: "gpt-4o".to_string(),
             download_images: false,
             project_dir: None,
@@ -229,7 +242,7 @@ impl CrawlState {
 
     pub fn insert_result(&self, mut result: CrawlResult) {
         let mut inner = self.inner.write();
-        
+
         // Populate inlinks from the map if we have any accumulated inlinks
         if let Some(inlinks) = inner.inlinks_map.get(&result.url) {
             for link in inlinks {
@@ -238,7 +251,18 @@ impl CrawlState {
                 }
             }
         }
-        
+
+        // Replacing a URL must not inflate counters.
+        if let Some(old) = inner.urls.remove(&result.url) {
+            match old.status_code {
+                Some(200..=299) => inner.stats.status_2xx -= 1,
+                Some(300..=399) => inner.stats.status_3xx -= 1,
+                Some(400..=499) => inner.stats.status_4xx -= 1,
+                Some(500..=599) => inner.stats.status_5xx -= 1,
+                _ => inner.stats.errors -= 1,
+            }
+            inner.stats.crawled -= 1;
+        }
         // Update stats
         if let Some(code) = result.status_code {
             match code {
@@ -258,7 +282,9 @@ impl CrawlState {
 
     pub fn add_discovered(&self, url: &str) -> bool {
         let mut inner = self.inner.write();
-        if inner.discovered_set.insert(url.to_string()) {
+        if inner.discovered_set.len() < inner.config.max_urls
+            && inner.discovered_set.insert(url.to_string())
+        {
             inner.stats.discovered += 1;
             true
         } else {
@@ -273,18 +299,19 @@ impl CrawlState {
 
     pub fn add_inlink(&self, target_url: &str, source_url: &str) {
         let mut inner = self.inner.write();
-        
+
         // 1. Accumulate in the map
-        inner.inlinks_map
+        inner
+            .inlinks_map
             .entry(target_url.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(source_url.to_string());
-            
+
         // 2. If the target URL is already crawled/inserted, update its result dynamically
-        if let Some(res) = inner.urls.get_mut(target_url) {
-            if !res.inlinks.contains(&source_url.to_string()) {
-                res.inlinks.push(source_url.to_string());
-            }
+        if let Some(res) = inner.urls.get_mut(target_url)
+            && !res.inlinks.contains(&source_url.to_string())
+        {
+            res.inlinks.push(source_url.to_string());
         }
     }
 
@@ -332,17 +359,38 @@ impl CrawlState {
         for res in &project.results {
             inner.urls.insert(res.url.clone(), res.clone());
             inner.discovered_set.insert(res.url.clone());
-            
+
             // Rebuild inlinks_map from loaded results
             for inlink in &res.inlinks {
-                inner.inlinks_map
+                inner
+                    .inlinks_map
                     .entry(res.url.clone())
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(inlink.clone());
             }
         }
-        inner.stats = project.stats;
-        inner.config = project.config;
+        inner.stats = CrawlStats {
+            crawled: inner.urls.len(),
+            discovered: inner.urls.len(),
+            ..Default::default()
+        };
+        let statuses: Vec<_> = inner.urls.values().map(|r| r.status_code).collect();
+        for status in statuses {
+            match status {
+                Some(200..=299) => inner.stats.status_2xx += 1,
+                Some(300..=399) => inner.stats.status_3xx += 1,
+                Some(400..=499) => inner.stats.status_4xx += 1,
+                Some(500..=599) => inner.stats.status_5xx += 1,
+                _ => inner.stats.errors += 1,
+            }
+        }
+        let mut config = project.config;
+        config.ai_api_key = inner.config.ai_api_key.clone();
+        config.dataforseo_login = inner.config.dataforseo_login.clone();
+        config.dataforseo_password = inner.config.dataforseo_password.clone();
+        inner.config = config;
+        inner.is_crawling = false;
+        inner.is_paused = false;
     }
 
     pub fn get_project(&self, seed_url: String) -> CrawlProject {
@@ -362,4 +410,38 @@ pub struct CrawlProject {
     pub config: CrawlConfig,
     pub results: Vec<CrawlResult>,
     pub stats: CrawlStats,
+}
+
+impl Default for CrawlState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Never include credentials in derived Debug output (including CrawlProject).
+impl std::fmt::Debug for CrawlConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CrawlConfig")
+            .field("max_urls", &self.max_urls)
+            .field("max_concurrency", &self.max_concurrency)
+            .field("crawl_mode", &self.crawl_mode)
+            .field("ai_provider", &self.ai_provider)
+            .field("ai_model", &self.ai_model)
+            .finish_non_exhaustive()
+    }
+}
+
+impl CrawlConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_urls == 0 || !(1..=50).contains(&self.max_concurrency) {
+            return Err("Set a positive URL limit and concurrency between 1 and 50.".into());
+        }
+        for pattern in [&self.include_regex, &self.exclude_regex]
+            .into_iter()
+            .flatten()
+        {
+            regex::Regex::new(pattern).map_err(|e| format!("Invalid URL filter: {e}"))?;
+        }
+        Ok(())
+    }
 }

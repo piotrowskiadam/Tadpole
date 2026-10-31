@@ -103,7 +103,11 @@ mod tests {
 
         assert_eq!(ranks.len(), snapshot.nodes.len());
         let sum: f32 = ranks.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-3, "PageRank sum should equal ~1.0, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 1e-3,
+            "PageRank sum should equal ~1.0, got {}",
+            sum
+        );
     }
 
     #[test]

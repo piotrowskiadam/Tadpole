@@ -1,6 +1,6 @@
-use gtk::prelude::*;
 use crate::state::CrawlState;
 use crate::ui::sidebar::CrawlFilter;
+use gtk::prelude::*;
 
 pub struct SummaryPanel {
     container: gtk::ScrolledWindow,
@@ -37,8 +37,10 @@ fn stat_row(name: &str) -> (gtk::ListBoxRow, gtk::Label) {
     let row = gtk::ListBoxRow::new();
     row.set_selectable(false);
     let b = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    b.set_margin_start(12); b.set_margin_end(12);
-    b.set_margin_top(7);    b.set_margin_bottom(7);
+    b.set_margin_start(12);
+    b.set_margin_end(12);
+    b.set_margin_top(7);
+    b.set_margin_bottom(7);
     let name_lbl = gtk::Label::new(Some(name));
     name_lbl.set_halign(gtk::Align::Start);
     name_lbl.set_hexpand(true);
@@ -167,11 +169,17 @@ impl SummaryPanel {
         let limit = state.get_limit();
         let disc = stats.discovered;
         let craw = stats.crawled;
-        let total_target = if limit > 0 { limit.min(disc).max(1) } else { disc.max(1) };
+        let total_target = if limit > 0 {
+            limit.min(disc).max(1)
+        } else {
+            disc.max(1)
+        };
         let frac = ((craw as f64) / (total_target as f64)).min(1.0).max(0.0);
         self.progress_bar.set_fraction(frac);
-        self.progress_bar.set_text(Some(&format!("{:.0}%", frac * 100.0)));
-        self.lbl_crawled.set_text(&format!("{} pages crawled / {} discovered", craw, disc));
+        self.progress_bar
+            .set_text(Some(&format!("{:.0}%", frac * 100.0)));
+        self.lbl_crawled
+            .set_text(&format!("{} pages crawled / {} discovered", craw, disc));
 
         if n == 0 {
             self.lbl_score.set_text("—");
@@ -190,34 +198,56 @@ impl SummaryPanel {
         // ── Health Score ───────────────────────────────────────────────────
         let pct = |count: usize| (count as f64) / (n as f64);
 
-        let missing_title   = results.iter().filter(|r| CrawlFilter::TitleMissing.matches(r, &results)).count();
-        let dup_title       = results.iter().filter(|r| CrawlFilter::TitleDuplicate.matches(r, &results)).count();
-        let missing_desc    = results.iter().filter(|r| CrawlFilter::DescMissing.matches(r, &results)).count();
-        let missing_h1      = results.iter().filter(|r| CrawlFilter::H1Missing.matches(r, &results)).count();
-        let images_no_alt   = results.iter().filter(|r| CrawlFilter::ImagesMissingAlt.matches(r, &results)).count();
-        let canon_missing   = results.iter().filter(|r| CrawlFilter::CanonicalMissing.matches(r, &results)).count();
-        let schema_errors   = results.iter().filter(|r| CrawlFilter::SchemaErrors.matches(r, &results)).count();
-        let err_4xx         = stats.status_4xx;
-        let err_5xx         = stats.status_5xx;
+        let missing_title = results
+            .iter()
+            .filter(|r| CrawlFilter::TitleMissing.matches(r, &results))
+            .count();
+        let duplicates = crate::filters::DuplicateIndex::from_results(&results);
+        let dup_title = results
+            .iter()
+            .filter(|r| duplicates.matches(CrawlFilter::TitleDuplicate, r))
+            .count();
+        let missing_desc = results
+            .iter()
+            .filter(|r| CrawlFilter::DescMissing.matches(r, &results))
+            .count();
+        let missing_h1 = results
+            .iter()
+            .filter(|r| CrawlFilter::H1Missing.matches(r, &results))
+            .count();
+        let images_no_alt = results
+            .iter()
+            .filter(|r| CrawlFilter::ImagesMissingAlt.matches(r, &results))
+            .count();
+        let canon_missing = results
+            .iter()
+            .filter(|r| CrawlFilter::CanonicalMissing.matches(r, &results))
+            .count();
+        let schema_errors = results
+            .iter()
+            .filter(|r| CrawlFilter::SchemaErrors.matches(r, &results))
+            .count();
+        let err_4xx = stats.status_4xx;
+        let err_5xx = stats.status_5xx;
 
         let mut score: f64 = 100.0;
-        score -= pct(missing_title)   * 20.0;
-        score -= pct(dup_title)       * 5.0;
-        score -= pct(missing_desc)    * 15.0;
-        score -= pct(missing_h1)      * 10.0;
-        score -= pct(images_no_alt)   * 5.0;
-        score -= pct(canon_missing)   * 5.0;
-        score -= pct(schema_errors)   * 3.0;
-        score -= pct(err_4xx)         * 10.0;
-        score -= pct(err_5xx)         * 10.0;
+        score -= pct(missing_title) * 20.0;
+        score -= pct(dup_title) * 5.0;
+        score -= pct(missing_desc) * 15.0;
+        score -= pct(missing_h1) * 10.0;
+        score -= pct(images_no_alt) * 5.0;
+        score -= pct(canon_missing) * 5.0;
+        score -= pct(schema_errors) * 3.0;
+        score -= pct(err_4xx) * 10.0;
+        score -= pct(err_5xx) * 10.0;
         let score = score.max(0.0).min(100.0);
 
         let score_int = score.round() as u32;
         self.lbl_score.set_text(&format!("{}", score_int));
         let (status_text, css_class) = match score_int {
             80..=100 => ("Good", "success"),
-            50..=79  => ("Needs Work", "warning"),
-            _        => ("Poor", "error"),
+            50..=79 => ("Needs Work", "warning"),
+            _ => ("Poor", "error"),
         };
         self.lbl_score_status.set_text(status_text);
         // clear old classes
@@ -235,12 +265,16 @@ impl SummaryPanel {
         }
         match score_int {
             80..=100 => self.score_bar.add_css_class("score-good"),
-            50..=79  => self.score_bar.add_css_class("score-warn"),
-            _        => self.score_bar.add_css_class("score-poor"),
+            50..=79 => self.score_bar.add_css_class("score-warn"),
+            _ => self.score_bar.add_css_class("score-poor"),
         }
 
         // ── Performance Averages ───────────────────────────────────────────
-        let avg_resp = results.iter().map(|r| r.response_time_ms as u64).sum::<u64>() / n as u64;
+        let avg_resp = results
+            .iter()
+            .map(|r| r.response_time_ms as u64)
+            .sum::<u64>()
+            / n as u64;
         let avg_size = results.iter().map(|r| r.size_bytes as u64).sum::<u64>() / n as u64;
         let avg_words = results.iter().map(|r| r.word_count as u64).sum::<u64>() / n as u64;
 
@@ -256,43 +290,48 @@ impl SummaryPanel {
             depth_counts[d] += 1;
         }
         let depth_counts_clone = depth_counts.clone();
-        self.depth_drawing.set_draw_func(move |_widget, cr, width, height| {
-            let max_count = *depth_counts_clone.iter().max().unwrap_or(&1).max(&1) as f64;
-            let n_bars = depth_counts_clone.len();
-            let bar_gap = 4.0_f64;
-            let bar_w = ((width as f64) - bar_gap * (n_bars as f64 + 1.0)) / n_bars as f64;
-            let label_h = 18.0_f64;
-            let chart_h = height as f64 - label_h;
+        self.depth_drawing
+            .set_draw_func(move |_widget, cr, width, height| {
+                let max_count = *depth_counts_clone.iter().max().unwrap_or(&1).max(&1) as f64;
+                let n_bars = depth_counts_clone.len();
+                let bar_gap = 4.0_f64;
+                let bar_w = ((width as f64) - bar_gap * (n_bars as f64 + 1.0)) / n_bars as f64;
+                let label_h = 18.0_f64;
+                let chart_h = height as f64 - label_h;
 
-            // Background
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
-            cr.paint().ok();
+                // Background
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+                cr.paint().ok();
 
-            for (i, &count) in depth_counts_clone.iter().enumerate() {
-                let x = bar_gap + i as f64 * (bar_w + bar_gap);
-                let bar_h = if count == 0 { 2.0 } else { (count as f64 / max_count) * (chart_h - 8.0) };
-                let y = chart_h - bar_h;
+                for (i, &count) in depth_counts_clone.iter().enumerate() {
+                    let x = bar_gap + i as f64 * (bar_w + bar_gap);
+                    let bar_h = if count == 0 {
+                        2.0
+                    } else {
+                        (count as f64 / max_count) * (chart_h - 8.0)
+                    };
+                    let y = chart_h - bar_h;
 
-                // Bar fill — use accent-ish blue
-                cr.set_source_rgba(0.22, 0.55, 0.88, 0.85);
-                cr.rectangle(x, y, bar_w, bar_h);
-                cr.fill().ok();
+                    // Bar fill — use accent-ish blue
+                    cr.set_source_rgba(0.22, 0.55, 0.88, 0.85);
+                    cr.rectangle(x, y, bar_w, bar_h);
+                    cr.fill().ok();
 
-                // Label: depth number
-                cr.set_source_rgba(0.5, 0.5, 0.5, 1.0);
-                cr.move_to(x + bar_w / 2.0 - 6.0, height as f64 - 2.0);
-                cr.set_font_size(11.0);
-                cr.show_text(&format!("D{}", i)).ok();
+                    // Label: depth number
+                    cr.set_source_rgba(0.5, 0.5, 0.5, 1.0);
+                    cr.move_to(x + bar_w / 2.0 - 6.0, height as f64 - 2.0);
+                    cr.set_font_size(11.0);
+                    cr.show_text(&format!("D{}", i)).ok();
 
-                // Count label above bar
-                if count > 0 {
-                    cr.set_source_rgba(0.3, 0.3, 0.3, 1.0);
-                    cr.move_to(x + bar_w / 2.0 - 6.0, y - 3.0);
-                    cr.set_font_size(10.0);
-                    cr.show_text(&count.to_string()).ok();
+                    // Count label above bar
+                    if count > 0 {
+                        cr.set_source_rgba(0.3, 0.3, 0.3, 1.0);
+                        cr.move_to(x + bar_w / 2.0 - 6.0, y - 3.0);
+                        cr.set_font_size(10.0);
+                        cr.show_text(&count.to_string()).ok();
+                    }
                 }
-            }
-        });
+            });
         self.depth_drawing.queue_draw();
 
         // ── Top Issues ─────────────────────────────────────────────────────
@@ -301,12 +340,12 @@ impl SummaryPanel {
         }
 
         let mut issues: Vec<(&str, usize, &str)> = vec![
-            ("Missing Titles",       missing_title,   "error"),
-            ("Missing Descriptions", missing_desc,    "warning"),
-            ("Missing H1",           missing_h1,      "warning"),
-            ("Images w/o Alt",       images_no_alt,   "warning"),
-            ("4xx Errors",           err_4xx,         "error"),
-            ("5xx Errors",           err_5xx,         "error"),
+            ("Missing Titles", missing_title, "error"),
+            ("Missing Descriptions", missing_desc, "warning"),
+            ("Missing H1", missing_h1, "warning"),
+            ("Images w/o Alt", images_no_alt, "warning"),
+            ("4xx Errors", err_4xx, "error"),
+            ("5xx Errors", err_5xx, "error"),
         ];
         issues.retain(|(_, count, _)| *count > 0);
         issues.sort_by(|a, b| b.1.cmp(&a.1));

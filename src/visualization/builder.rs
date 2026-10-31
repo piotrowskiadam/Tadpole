@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use url::Url;
 
-use crate::state::CrawlResult;
 use super::snapshot::*;
+use crate::state::CrawlResult;
 
 pub struct SnapshotBuilder {
     strings: StringTable,
@@ -82,7 +82,9 @@ impl SnapshotBuilder {
         } else {
             let id = self.sections.len() as SectionId;
             let name_id = self.strings.intern(&section_name);
-            let prefix_id = self.strings.intern(&format!("/{}/", section_name.trim_matches('/')));
+            let prefix_id = self
+                .strings
+                .intern(&format!("/{}/", section_name.trim_matches('/')));
             self.sections_map.insert(section_name, id);
             self.sections.push(SiteSection {
                 id,
@@ -139,7 +141,7 @@ impl SnapshotBuilder {
             if status >= 400 {
                 issue_mask |= 1 << 0; // HTTP Error
             }
-            if status >= 300 && status < 400 {
+            if (300..400).contains(&status) {
                 issue_mask |= 1 << 1; // Redirect
             }
             if !res.indexable {
@@ -178,13 +180,16 @@ impl SnapshotBuilder {
             if let Some(&src_id) = builder.url_to_node_id.get(&res.url) {
                 for outlink in &res.outlinks {
                     if let Some(&tgt_id) = builder.url_to_node_id.get(outlink) {
-                        *edge_counts.entry((src_id, tgt_id)).or_insert(0) += 1;
+                        let count = edge_counts.entry((src_id, tgt_id)).or_insert(0);
+                        *count = count.saturating_add(1);
                     }
                 }
             }
         }
 
-        for ((src_id, tgt_id), count) in edge_counts {
+        let mut sorted_edges: Vec<_> = edge_counts.into_iter().collect();
+        sorted_edges.sort_by_key(|(pair, _)| *pair);
+        for ((src_id, tgt_id), count) in sorted_edges {
             builder.raw_edges.push(RawEdge {
                 source: src_id,
                 target: tgt_id,
@@ -258,7 +263,11 @@ impl SnapshotBuilder {
                 Indexability::Indexable => metrics.indexable_count += 1,
                 Indexability::Noindex => metrics.noindex_count += 1,
                 Indexability::Redirect => metrics.redirect_count += 1,
-                _ => metrics.error_count += 1,
+                _ => {}
+            }
+
+            if raw.status_code == 0 || raw.status_code >= 400 {
+                metrics.error_count += 1;
             }
 
             if unique_in_degrees[idx] == 0 {

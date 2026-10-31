@@ -2,13 +2,13 @@ use crate::state::CrawlResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntheticProfile {
-    BalancedSite,       // 1,000 nodes, regular hierarchy
-    BlogAndCommerce,    // 5,000 nodes, blog linking to product categories
-    OrphanIslands,      // 1,000 nodes with several disconnected clusters
-    RedirectProblems,   // 1,000 nodes with 301/302 chains and loops
+    BalancedSite,         // 1,000 nodes, regular hierarchy
+    BlogAndCommerce,      // 5,000 nodes, blog linking to product categories
+    OrphanIslands,        // 1,000 nodes with several disconnected clusters
+    RedirectProblems,     // 1,000 nodes with 301/302 chains and loops
     BoilerplateExplosion, // 2,000 nodes with heavy global nav link density
-    LargeSynthetic,     // 10,000 nodes, 100,000 edges
-    VeryLargeSynthetic, // 100,000 nodes, multi-section enterprise site
+    LargeSynthetic,       // 10,000 nodes, 100,000 edges
+    VeryLargeSynthetic,   // 100,000 nodes, multi-section enterprise site
 }
 
 pub fn generate_synthetic_crawl_results(profile: SyntheticProfile, seed: u64) -> Vec<CrawlResult> {
@@ -23,7 +23,7 @@ pub fn generate_synthetic_crawl_results(profile: SyntheticProfile, seed: u64) ->
     };
 
     let domain = "https://example-shop.com";
-    let sections = vec!["blog", "products", "category", "about", "help", "account"];
+    let sections = ["blog", "products", "category", "about", "help", "account"];
     let mut results = Vec::with_capacity(count);
 
     let mut rng_state = seed;
@@ -73,8 +73,10 @@ pub fn generate_synthetic_crawl_results(profile: SyntheticProfile, seed: u64) ->
         let sec = sections[sec_idx.min(sections.len() - 1)];
         let url = format!("{}/{}/page-{}", domain, sec, i);
 
-        let is_error = profile == SyntheticProfile::RedirectProblems && next_rand(&mut rng_state) < 0.15;
-        let is_redirect = profile == SyntheticProfile::RedirectProblems && next_rand(&mut rng_state) < 0.20;
+        let is_error =
+            profile == SyntheticProfile::RedirectProblems && next_rand(&mut rng_state) < 0.15;
+        let is_redirect =
+            profile == SyntheticProfile::RedirectProblems && next_rand(&mut rng_state) < 0.20;
 
         let status_code = if is_error {
             Some(404)
@@ -98,7 +100,11 @@ pub fn generate_synthetic_crawl_results(profile: SyntheticProfile, seed: u64) ->
         results.push(CrawlResult {
             url: url.clone(),
             status_code,
-            error_message: if is_error { Some("404 Not Found".to_string()) } else { None },
+            error_message: if is_error {
+                Some("404 Not Found".to_string())
+            } else {
+                None
+            },
             indexable,
             indexability_status,
             title: Some(format!("Page {} - {}", i, sec)),
@@ -161,10 +167,10 @@ pub fn generate_synthetic_crawl_results(profile: SyntheticProfile, seed: u64) ->
         let src_url = results[i].url.clone();
         let out = results[i].outlinks.clone();
         for target in out {
-            if let Some(target_res) = results.iter_mut().find(|r| r.url == target) {
-                if !target_res.inlinks.contains(&src_url) {
-                    target_res.inlinks.push(src_url.clone());
-                }
+            if let Some(target_res) = results.iter_mut().find(|r| r.url == target)
+                && !target_res.inlinks.contains(&src_url)
+            {
+                target_res.inlinks.push(src_url.clone());
             }
         }
     }

@@ -6,25 +6,35 @@ description = "Tadpole — a local SEO crawler and site auditing tool"
 license = "MIT"
 
 
+[features]
+default = ["desktop"]
+desktop = ["dep:gtk", "dep:adw", "dep:glib", "dep:gio", "dep:gdk", "dep:cairo-rs"]
+
+[[bin]]
+name = "tadpole"
+path = "src/main.rs"
+required-features = ["desktop"]
+
 [dependencies]
-gtk = { package = "gtk4", version = "0.11.3", features = ["v4_12"] }
-adw = { package = "libadwaita", version = "0.9.1", features = ["v1_5"] }
+gtk = { package = "gtk4", version = "0.11.3", features = ["v4_12"], optional = true }
+adw = { package = "libadwaita", version = "0.9.1", features = ["v1_5"], optional = true }
 once_cell = "1.21.4"
 reqwest = { version = "0.13.4", features = ["json"] }
 scraper = "0.27.0"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["full"] }
 url = "2.5.8"
-glib = "0.22.7"
-gio = "0.22.6"
+glib = { version = "0.22.7", optional = true }
+gio = { version = "0.22.6", optional = true }
 parking_lot = "0.12.5"
-gdk = { package = "gdk4", version = "0.11.2" }
+gdk = { package = "gdk4", version = "0.11.2", optional = true }
 csv = "1.3.0"
 regex = "1.10.3"
 headless_chrome = "1.0.22"
 serde_json = "1.0.115"
-cairo-rs = "0.22"
+cairo-rs = { version = "0.22", optional = true }
 ego-tree = "0.11.0"
+tempfile = "3.27.0"
 
 
 
@@ -46,3 +56,6 @@ assets = [
 
 
 
+[[example]]
+name = "ui_preview"
+required-features = ["desktop"]

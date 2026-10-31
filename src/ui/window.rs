@@ -1,16 +1,16 @@
-use adw::prelude::*;
-use std::rc::Rc;
-use std::cell::RefCell;
-use crate::crawler::{Crawler, CrawlUpdate};
-use crate::state::{CrawlState, CrawlConfig, CrawlMode};
-use crate::ui::sidebar::{Sidebar, CrawlFilter};
-use crate::ui::table::Table;
+use crate::crawler::{CrawlUpdate, Crawler};
+use crate::state::{CrawlConfig, CrawlMode, CrawlState};
 use crate::ui::details::Details;
+use crate::ui::sidebar::{CrawlFilter, Sidebar};
+use crate::ui::table::Table;
+use adw::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct MainWindow {
     window: adw::ApplicationWindow,
     state: CrawlState,
-    
+
     // UI components
     sidebar: Rc<Sidebar>,
     table: Rc<Table>,
@@ -25,7 +25,7 @@ pub struct MainWindow {
     pause_button: gtk::Button,
     progress_bar: gtk::ProgressBar,
     status_label: gtk::Label,
-    
+
     mode_dropdown: gtk::DropDown,
     edit_list_button: gtk::Button,
     loaded_list_urls: Rc<RefCell<Vec<String>>>,
@@ -157,7 +157,6 @@ impl MainWindow {
         export_popover.set_child(Some(&popover_box));
         export_menu_button.set_popover(Some(&export_popover));
 
-
         // Address entry in header bar
         let address_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         address_box.set_margin_top(6);
@@ -168,8 +167,11 @@ impl MainWindow {
         address_box.append(&mode_dropdown);
 
         let address_entry = gtk::Entry::builder()
-            .placeholder_text("Enter website URL (e.g., http://localhost:8080/ or https://example.com/)")
-            .width_request(450)
+            .placeholder_text(
+                "Enter website URL (e.g., http://localhost:8080/ or https://example.com/)",
+            )
+            .hexpand(true)
+            .width_chars(24)
             .build();
         address_box.append(&address_entry);
 
@@ -192,7 +194,11 @@ impl MainWindow {
             .build();
         address_box.append(&pause_button);
 
-        header_bar.set_title_widget(Some(&address_box));
+        address_box.set_margin_start(12);
+        address_box.set_margin_end(12);
+        main_box.append(&address_box);
+        address_entry.update_property(&[gtk::accessible::Property::Label("Website URL")]);
+        mode_dropdown.update_property(&[gtk::accessible::Property::Label("Crawl mode")]);
 
         // Progress bar at the top of content area
         let progress_bar = gtk::ProgressBar::new();
@@ -216,6 +222,19 @@ impl MainWindow {
         content_box.append(&main_paned);
 
         let table = Rc::new(Table::new());
+        let studio_button = gtk::Button::with_label("SEO Studio");
+        studio_button.set_tooltip_text(Some("Research Google results and generate content briefs"));
+        header_bar.pack_start(&studio_button);
+        let state_studio = state.clone();
+        let table_studio = table.clone();
+        let parent_studio = window.clone();
+        studio_button.connect_clicked(move |_| {
+            crate::ui::workbench::present(
+                &parent_studio,
+                state_studio.clone(),
+                table_studio.get_selected_url(),
+            );
+        });
 
         // Active filter banner shown when a sidebar filter is engaged
         let filter_banner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -240,7 +259,9 @@ impl MainWindow {
             .label("Copy for Sheets")
             .icon_name("edit-copy-symbolic")
             .has_frame(false)
-            .tooltip_text("Copy filtered rows as TSV to paste directly into Google Sheets or Excel (Ctrl+V)")
+            .tooltip_text(
+                "Copy filtered rows as TSV to paste directly into Google Sheets or Excel (Ctrl+V)",
+            )
             .valign(gtk::Align::Center)
             .build();
         filter_banner.append(&filter_copy_btn);
@@ -309,7 +330,9 @@ impl MainWindow {
         table_box.append(&filter_banner);
         table_box.append(table.widget());
 
-        let link_opportunities = Rc::new(crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()));
+        let link_opportunities = Rc::new(
+            crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()),
+        );
 
         // Main notebook for crawl results / linking opportunities
         let main_notebook = gtk::Notebook::new();
@@ -317,7 +340,10 @@ impl MainWindow {
         main_notebook.set_hexpand(true);
 
         main_notebook.append_page(&table_box, Some(&gtk::Label::new(Some("Crawl Results"))));
-        main_notebook.append_page(link_opportunities.widget(), Some(&gtk::Label::new(Some("Link Opportunities (beta)"))));
+        main_notebook.append_page(
+            link_opportunities.widget(),
+            Some(&gtk::Label::new(Some("Link Opportunities (beta)"))),
+        );
 
         right_paned.set_start_child(Some(&main_notebook));
 
@@ -329,6 +355,28 @@ impl MainWindow {
 
         let summary_panel = Rc::new(crate::ui::summary::SummaryPanel::new());
         content_box.append(summary_panel.widget());
+        for (label, widget) in [
+            ("Filters", sidebar.widget().clone().upcast::<gtk::Widget>()),
+            (
+                "Summary",
+                summary_panel.widget().clone().upcast::<gtk::Widget>(),
+            ),
+        ] {
+            let toggle = gtk::ToggleButton::with_label(label);
+            toggle.set_active(true);
+            toggle.set_tooltip_text(Some(&format!("Show or hide {label}")));
+            let condition = if label == "Summary" {
+                "max-width: 1100px"
+            } else {
+                "max-width: 850px"
+            };
+            let breakpoint =
+                adw::Breakpoint::new(adw::BreakpointCondition::parse(condition).unwrap());
+            breakpoint.add_setter(&toggle, "active", Some(&false.to_value()));
+            window.add_breakpoint(breakpoint);
+            toggle.connect_toggled(move |button| widget.set_visible(button.is_active()));
+            header_bar.pack_end(&toggle);
+        }
 
         // --- Status Bar ---
         let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -339,7 +387,12 @@ impl MainWindow {
         status_bar.set_margin_bottom(8);
         main_box.append(&status_bar);
 
-        let status_label = gtk::Label::new(Some("Ready"));
+        let status_label = gtk::Label::new(Some(
+            "Enter a website URL and choose Start, or open SEO Studio to research a topic.",
+        ));
+        status_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        status_label.set_hexpand(true);
+        status_label.set_xalign(0.0);
         status_label.add_css_class("dim-label");
         status_bar.append(&status_label);
 
@@ -376,9 +429,23 @@ impl MainWindow {
         main_window.address_entry.set_visible(!is_list);
         main_window.edit_list_button.set_visible(is_list);
 
-        main_window.setup_events(open_button, save_button, pref_button, csv_btn, md_btn, export_popover, search_entry, filter_copy_btn, filter_export_btn);
+        main_window.setup_events(
+            open_button,
+            save_button,
+            pref_button,
+            csv_btn,
+            md_btn,
+            export_popover,
+            search_entry,
+            filter_copy_btn,
+            filter_export_btn,
+        );
 
         main_window
+    }
+
+    pub fn window(&self) -> &adw::ApplicationWindow {
+        &self.window
     }
 
     pub fn present(&self) {
@@ -386,10 +453,10 @@ impl MainWindow {
     }
 
     fn setup_events(
-        &self, 
-        open_button: gtk::Button, 
-        save_button: gtk::Button, 
-        pref_button: gtk::Button, 
+        &self,
+        open_button: gtk::Button,
+        save_button: gtk::Button,
+        pref_button: gtk::Button,
         csv_btn: gtk::Button,
         md_btn: gtk::Button,
         export_popover: gtk::Popover,
@@ -445,7 +512,10 @@ impl MainWindow {
         let parent_win_vis = main_window_widget.clone();
         let details_vis = details.clone();
         vis_button.connect_clicked(move |_| {
-            let vis_win = crate::ui::site_visualizer::VisualizerWindow::new(&parent_win_vis, state_vis.clone());
+            let vis_win = crate::ui::site_visualizer::VisualizerWindow::new(
+                &parent_win_vis,
+                state_vis.clone(),
+            );
             let details_inner = details_vis.clone();
             let state_inner = state_vis.clone();
             vis_win.connect_selection_changed(move |maybe_url: Option<String>| {
@@ -479,7 +549,7 @@ impl MainWindow {
             let is_list = mode == CrawlMode::List;
             address_entry_mode.set_visible(!is_list);
             edit_list_button_mode.set_visible(is_list);
-            
+
             let mut config = state_mode.get_config();
             config.crawl_mode = mode;
             state_mode.set_config(config);
@@ -506,9 +576,7 @@ impl MainWindow {
             header_bar.set_show_end_title_buttons(false);
             main_box.append(&header_bar);
 
-            let cancel_btn = gtk::Button::builder()
-                .label("Cancel")
-                .build();
+            let cancel_btn = gtk::Button::builder().label("Cancel").build();
             header_bar.pack_start(&cancel_btn);
 
             let save_btn = gtk::Button::builder()
@@ -532,7 +600,7 @@ impl MainWindow {
             let scrolled = gtk::ScrolledWindow::new();
             scrolled.set_vexpand(true);
             scrolled.set_hexpand(true);
-            
+
             let text_view = gtk::TextView::new();
             text_view.set_monospace(true);
             scrolled.set_child(Some(&text_view));
@@ -551,7 +619,7 @@ impl MainWindow {
             load_file_btn.connect_clicked(move |_| {
                 let file_dialog = gtk::FileDialog::new();
                 file_dialog.set_title("Load URL List File");
-                
+
                 let filter = gtk::FileFilter::new();
                 filter.set_name(Some("Text Files"));
                 filter.add_pattern("*.txt");
@@ -560,15 +628,19 @@ impl MainWindow {
                 file_dialog.set_filters(Some(&filters));
 
                 let text_view_inner = text_view_file.clone();
-                file_dialog.open(Some(&dialog_file), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result {
-                        if let Some(path) = file.path() {
-                            if let Ok(content) = std::fs::read_to_string(path) {
-                                text_view_inner.buffer().set_text(&content);
+                file_dialog.open(
+                    Some(&dialog_file),
+                    None::<&gio::Cancellable>,
+                    move |result| {
+                        if let Ok(file) = result {
+                            if let Some(path) = file.path() {
+                                if let Ok(content) = std::fs::read_to_string(path) {
+                                    text_view_inner.buffer().set_text(&content);
+                                }
                             }
                         }
-                    }
-                });
+                    },
+                );
             });
 
             let dialog_cancel = dialog.clone();
@@ -583,12 +655,13 @@ impl MainWindow {
                 let buffer = text_view_save.buffer();
                 let (start, end) = buffer.bounds();
                 let text = buffer.text(&start, &end, false).to_string();
-                
-                let urls: Vec<String> = text.lines()
+
+                let urls: Vec<String> = text
+                    .lines()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                
+
                 *loaded_urls_save.borrow_mut() = urls;
                 dialog_save.destroy();
             });
@@ -604,7 +677,6 @@ impl MainWindow {
         search_entry.connect_search_changed(move |entry| {
             table_search.set_search_query(entry.text().as_str());
         });
-
 
         // Preferences dialog action
         let state_pref = state.clone();
@@ -659,7 +731,7 @@ impl MainWindow {
             let group_behavior = adw::PreferencesGroup::builder()
                 .title("Crawl Behaviour")
                 .build();
-            
+
             let user_agent_row = adw::EntryRow::builder()
                 .title("User-Agent Header")
                 .text(&config.user_agent)
@@ -731,7 +803,7 @@ impl MainWindow {
             let group_ai = adw::PreferencesGroup::builder()
                 .title("AI Assistant API Keys")
                 .build();
-            
+
             let provider_row = adw::ComboRow::builder()
                 .title("API Provider")
                 .model(&gtk::StringList::new(&["OpenAI", "OpenRouter"]))
@@ -748,6 +820,13 @@ impl MainWindow {
                 .text(config.ai_api_key.as_deref().unwrap_or(""))
                 .build();
             group_ai.add(&api_key_row);
+            let dataforseo_group = adw::PreferencesGroup::builder().title("DataForSEO · Google SERP")
+                .description("API credentials stay in memory and are never saved in crawl projects. Requests are made only from SEO Studio.").build();
+            let dataforseo_login = adw::EntryRow::builder().title("DataForSEO API login").text(config.dataforseo_login.as_deref().unwrap_or("")).build();
+            let dataforseo_password = adw::PasswordEntryRow::builder().title("DataForSEO API password").text(config.dataforseo_password.as_deref().unwrap_or("")).build();
+            dataforseo_group.add(&dataforseo_login);
+            dataforseo_group.add(&dataforseo_password);
+            page_ai.add(&dataforseo_group);
 
             let openai_models = std::rc::Rc::new(vec![
                 "gpt-4o".to_string(),
@@ -815,7 +894,7 @@ impl MainWindow {
                 let openrouter_models = openrouter_models.clone();
                 let model_dropdown = model_dropdown.clone();
                 let custom_model_row = custom_model_row.clone();
-                
+
                 move |provider_idx: u32, select_model: Option<&str>| {
                     let models_owner;
                     let models = if provider_idx == 1 {
@@ -881,7 +960,7 @@ impl MainWindow {
                     &*openai_models_for_combo
                 };
                 let selected = combo.selected();
-                if selected != std::u32::MAX && selected as usize == models.len() - 1 {
+                if selected != gtk::INVALID_LIST_POSITION && selected as usize == models.len() - 1 {
                     custom_model_row_for_combo.set_visible(true);
                 } else {
                     custom_model_row_for_combo.set_visible(false);
@@ -905,7 +984,7 @@ impl MainWindow {
                         return;
                     }
                     fetched_once.set(true);
-                    
+
                     let openrouter_models = openrouter_models.clone();
                     let update_models_list = update_models_list.clone();
                     let model_dropdown = model_dropdown.clone();
@@ -918,7 +997,7 @@ impl MainWindow {
                         if let Ok(mut fetched) = fetch_openrouter_models().await {
                             if !fetched.is_empty() {
                                 fetched.push("Custom...".to_string());
-                                
+
                                 let current_selected_model = {
                                     let selected = model_dropdown.selected() as usize;
                                     let provider_idx = provider_row.selected();
@@ -982,7 +1061,7 @@ impl MainWindow {
                         Ok(mut fetched) => {
                             if !fetched.is_empty() {
                                 fetched.push("Custom...".to_string());
-                                
+
                                 let current_selected_model = {
                                     let selected = model_dropdown.selected() as usize;
                                     let provider_idx = provider_row.selected();
@@ -1103,7 +1182,7 @@ impl MainWindow {
                 .subtitle("https://github.com/piotrowskiadam/Tadpole")
                 .activatable(true)
                 .build();
-            
+
             let link_icon = gtk::Image::builder()
                 .icon_name("external-link-symbolic")
                 .valign(gtk::Align::Center)
@@ -1177,6 +1256,8 @@ impl MainWindow {
                     ai_provider: provider,
                     ai_api_key: if api_key_text.trim().is_empty() { None } else { Some(api_key_text) },
                     ai_model: final_model,
+                    dataforseo_login: Some(dataforseo_login.text().to_string()).filter(|s| !s.trim().is_empty()),
+                    dataforseo_password: Some(dataforseo_password.text().to_string()).filter(|s| !s.trim().is_empty()),
                     download_images: download_images_row.is_active(),
                     project_dir: current_config.project_dir, // Preserve
                     crawl_mode: current_config.crawl_mode, // Preserve
@@ -1237,17 +1318,24 @@ impl MainWindow {
 
             let table_inner = table_filter_export.clone();
             let status_inner = status_label_filter_export.clone();
-            dialog.save(Some(&parent_win_filter), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        if let Err(e) = table_inner.export_to_csv(&path) {
-                            status_inner.set_text(&format!("Failed to export CSV: {}", e));
-                        } else {
-                            status_inner.set_text(&format!("Successfully exported filtered CSV to {}", path.display()));
+            dialog.save(
+                Some(&parent_win_filter),
+                None::<&gio::Cancellable>,
+                move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            if let Err(e) = table_inner.export_to_csv(&path) {
+                                status_inner.set_text(&format!("Failed to export CSV: {}", e));
+                            } else {
+                                status_inner.set_text(&format!(
+                                    "Successfully exported filtered CSV to {}",
+                                    path.display()
+                                ));
+                            }
                         }
                     }
-                }
-            });
+                },
+            );
         });
 
         // Export CSV click from header bar menu
@@ -1281,17 +1369,24 @@ impl MainWindow {
 
             let table_inner = table_export.clone();
             let status_inner = status_label_csv.clone();
-            dialog.save(Some(&parent_win_export), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        if let Err(e) = table_inner.export_to_csv(&path) {
-                            status_inner.set_text(&format!("Failed to export CSV: {}", e));
-                        } else {
-                            status_inner.set_text(&format!("Successfully exported CSV to {}", path.display()));
+            dialog.save(
+                Some(&parent_win_export),
+                None::<&gio::Cancellable>,
+                move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            if let Err(e) = table_inner.export_to_csv(&path) {
+                                status_inner.set_text(&format!("Failed to export CSV: {}", e));
+                            } else {
+                                status_inner.set_text(&format!(
+                                    "Successfully exported CSV to {}",
+                                    path.display()
+                                ));
+                            }
                         }
                     }
-                }
-            });
+                },
+            );
         });
 
         // Export Markdown click
@@ -1306,39 +1401,46 @@ impl MainWindow {
 
             let state_inner = state_md.clone();
             let status_label_inner = status_label_md.clone();
-            dialog.select_folder(Some(&parent_win_md), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        let results = state_inner.get_all_results();
-                        let mut success_count = 0;
-                        let mut error_count = 0;
-                        for res in results {
-                            if let Some(ref md_content) = res.markdown {
-                                let filename = crate::crawler::get_slug_filename(&res.url);
-                                let dest_path = path.join(format!("{}.md", filename));
-                                match std::fs::write(&dest_path, md_content) {
-                                    Ok(_) => success_count += 1,
+            dialog.select_folder(
+                Some(&parent_win_md),
+                None::<&gio::Cancellable>,
+                move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            let state = state_inner.clone();
+                            let status = status_label_inner.clone();
+                            status.set_text("Exporting Markdown…");
+                            glib::MainContext::default().spawn_local(async move {
+                                let result = tokio::task::spawn_blocking(move || {
+                                    let mut saved = 0;
+                                    let mut errors = 0;
+                                    for page in state.get_all_results() {
+                                        if let Some(markdown) = page.markdown {
+                                            let target = path
+                                                .join(crate::project::markdown_filename(&page.url));
+                                            if std::fs::write(target, markdown).is_ok() {
+                                                saved += 1;
+                                            } else {
+                                                errors += 1;
+                                            }
+                                        }
+                                    }
+                                    (saved, errors)
+                                })
+                                .await;
+                                match result {
+                                    Ok((saved, errors)) => status.set_text(&format!(
+                                        "Exported {saved} Markdown files ({errors} errors)."
+                                    )),
                                     Err(e) => {
-                                        eprintln!("Failed to write markdown file to {:?}: {}", dest_path, e);
-                                        error_count += 1;
+                                        status.set_text(&format!("Could not export Markdown: {e}"))
                                     }
                                 }
-                            }
-                        }
-                        if error_count > 0 {
-                            status_label_inner.set_text(&format!(
-                                "Exported {} Markdown files ({} errors).",
-                                success_count, error_count
-                            ));
-                        } else {
-                            status_label_inner.set_text(&format!(
-                                "Successfully exported {} Markdown files.",
-                                success_count
-                            ));
+                            });
                         }
                     }
-                }
-            });
+                },
+            );
         });
 
         // Save project click
@@ -1346,6 +1448,7 @@ impl MainWindow {
         let parent_win_save = main_window_widget.clone();
         let address_entry_save = address_entry.clone();
         let loaded_list_urls_save = loaded_list_urls.clone();
+        let status_save = status_label.clone();
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Save Crawl Project");
@@ -1358,31 +1461,50 @@ impl MainWindow {
             dialog.set_filters(Some(&filters));
 
             let state_inner = state_save.clone();
+            let status_inner = status_save.clone();
             let address_inner = address_entry_save.clone();
             let loaded_list_urls_inner = loaded_list_urls_save.clone();
-            dialog.save(Some(&parent_win_save), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        if let Some(parent) = path.parent() {
-                            let mut config = state_inner.get_config();
-                            config.project_dir = Some(parent.to_string_lossy().to_string());
-                            state_inner.set_config(config);
-                        }
-                        
-                        let is_list = state_inner.get_config().crawl_mode == CrawlMode::List;
-                        let seed_url = if is_list {
-                            loaded_list_urls_inner.borrow().join("\n")
-                        } else {
-                            address_inner.text().to_string()
-                        };
-                        let project = state_inner.get_project(seed_url);
-                        
-                        if let Ok(f) = std::fs::File::create(&path) {
-                            let _ = serde_json::to_writer_pretty(f, &project);
+            dialog.save(
+                Some(&parent_win_save),
+                None::<&gio::Cancellable>,
+                move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            if let Some(parent) = path.parent() {
+                                let mut config = state_inner.get_config();
+                                config.project_dir = Some(parent.to_string_lossy().to_string());
+                                state_inner.set_config(config);
+                            }
+
+                            let is_list = state_inner.get_config().crawl_mode == CrawlMode::List;
+                            let seed_url = if is_list {
+                                loaded_list_urls_inner.borrow().join("\n")
+                            } else {
+                                address_inner.text().to_string()
+                            };
+                            let state = state_inner.clone();
+                            let status = status_inner.clone();
+                            status.set_text("Saving project…");
+                            glib::MainContext::default().spawn_local(async move {
+                                let saved = tokio::task::spawn_blocking(move || {
+                                    crate::project::save(&path, &state.get_project(seed_url))
+                                })
+                                .await;
+                                match saved {
+                                    Ok(Ok(())) => status
+                                        .set_text("Project saved. API credentials were excluded."),
+                                    Ok(Err(e)) => {
+                                        status.set_text(&format!("Could not save project: {e}"))
+                                    }
+                                    Err(e) => {
+                                        status.set_text(&format!("Could not save project: {e}"))
+                                    }
+                                }
+                            });
                         }
                     }
-                }
-            });
+                },
+            );
         });
 
         // Open project click
@@ -1398,6 +1520,7 @@ impl MainWindow {
         let link_opps_open = link_opps.clone();
         let status_label_open = status_label.clone();
         open_button.connect_clicked(move |_| {
+            if state_open.is_crawling() { status_label_open.set_text("Stop the current crawl before opening a project."); return; }
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Open Crawl Project");
             let filter = gtk::FileFilter::new();
@@ -1421,6 +1544,7 @@ impl MainWindow {
             dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
+                        if state_inner.is_crawling() { status_label_inner.set_text("Stop the current crawl before opening a project."); return; }
                         status_label_inner.set_text("Loading saved crawl project...");
 
                         let state_bg = state_inner.clone();
@@ -1444,7 +1568,9 @@ impl MainWindow {
                                 }
                             }).await.ok().flatten();
 
+                            if state_bg.is_crawling() { status_label_bg.set_text("Project not loaded because a crawl is running. Stop it and open the file again."); return; }
                             if let Some(project) = project_opt {
+                                if let Err(e) = project.config.validate() { status_label_bg.set_text(&e); return; }
                                 address_bg.set_text(&project.seed_url);
                                 state_bg.load_project(project.clone());
 
@@ -1458,7 +1584,7 @@ impl MainWindow {
                                     table_bg.add_or_update(res);
                                     if idx % 50 == 0 {
                                         status_label_bg.set_text(&format!("Loading rows {} / {}", idx, total));
-                                        tokio::task::yield_now().await;
+                                        glib::timeout_future(std::time::Duration::from_millis(1)).await;
                                     }
                                 }
 
@@ -1492,7 +1618,10 @@ impl MainWindow {
 
         // Tracking crawl velocity and samples for telemetry
         let crawl_start_time = Rc::new(RefCell::new(Option::<std::time::Instant>::None));
-        let crawl_samples = Rc::new(RefCell::new(std::collections::VecDeque::<(std::time::Instant, usize)>::new()));
+        let crawl_samples = Rc::new(RefCell::new(std::collections::VecDeque::<(
+            std::time::Instant,
+            usize,
+        )>::new()));
 
         // Attach receiver to GLib event loop using spawn_local
         let start_button_clone = start_button.clone();
@@ -1507,15 +1636,21 @@ impl MainWindow {
         let crawl_samples_clone = crawl_samples.clone();
 
         glib::MainContext::default().spawn_local(async move {
+            let mut last_refresh = std::time::Instant::now();
             while let Some(update) = rx.recv().await {
                 match update {
                     CrawlUpdate::Discovered(url) => {
                         status_label_clone.set_text(&format!("Discovered: {}", url));
                     }
                     CrawlUpdate::Crawled(res) => {
-                        table_clone.add_or_update(res);
-                        sidebar_clone.update_counts(&state_clone);
-                        summary_panel_clone.update(&state_clone);
+                        table_clone.add_or_update(*res);
+                        if last_refresh.elapsed() >= std::time::Duration::from_millis(250) {
+                            sidebar_clone.update_counts(&state_clone);
+                            summary_panel_clone.update(&state_clone);
+                            table_clone.set_filter(table_clone.get_active_filter());
+                            last_refresh = std::time::Instant::now();
+                            glib::timeout_future(std::time::Duration::from_millis(1)).await;
+                        }
 
                         let stats = state_clone.get_stats();
                         let now = std::time::Instant::now();
@@ -1613,7 +1748,13 @@ impl MainWindow {
                             "Crawl completed: {} URLs crawled{}. Total discovered: {}.",
                             stats.crawled, elapsed_msg, stats.discovered
                         ));
+                        for (index, result) in state_clone.get_all_results().into_iter().enumerate() {
+                            table_clone.add_or_update(result);
+                            if index % 100 == 0 { glib::timeout_future(std::time::Duration::from_millis(1)).await; }
+                        }
+                        sidebar_clone.update_counts(&state_clone);
                         summary_panel_clone.update(&state_clone);
+                        table_clone.set_filter(table_clone.get_active_filter());
                     }
                 }
             }
@@ -1648,6 +1789,7 @@ impl MainWindow {
             } else {
                 // Pre-validate input URL
                 let config = state_start.get_config();
+                if let Err(error) = config.validate() { status_label_start.set_text(&error); return; }
                 let urls_str = if config.crawl_mode == CrawlMode::List {
                     let urls = loaded_list_urls_start.borrow();
                     if urls.is_empty() {
@@ -1664,7 +1806,7 @@ impl MainWindow {
                     let cleaned = crate::crawler::clean_seed_url(&raw_url);
                     match url::Url::parse(&cleaned) {
                         Ok(parsed) => {
-                            if parsed.host_str().is_none() {
+                            if parsed.host_str().is_none() || !matches!(parsed.scheme(), "http" | "https") {
                                 status_label_start.set_text("Please enter a valid website address (e.g. https://example.com).");
                                 return;
                             }
@@ -1694,6 +1836,7 @@ impl MainWindow {
 
                     move |urls: String| {
                         state_start.reset();
+                        state_start.set_crawling(true);
                         table_start.clear();
                         details_start.clear();
                         link_opps_start.clear();
@@ -1719,7 +1862,7 @@ impl MainWindow {
                     }
                 };
 
-                let existing_count = state_start.get_all_results().len();
+                let existing_count = state_start.get_stats().crawled;
                 if existing_count > 0 {
                     let alert = adw::AlertDialog::new(
                         Some("Discard Current Crawl Results?"),
@@ -1769,17 +1912,19 @@ impl MainWindow {
     }
 }
 
-async fn fetch_openrouter_models() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+async fn fetch_openrouter_models() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>>
+{
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()?;
-    
-    let res: serde_json::Value = client.get("https://openrouter.ai/api/v1/models")
+
+    let res: serde_json::Value = client
+        .get("https://openrouter.ai/api/v1/models")
         .send()
         .await?
         .json()
         .await?;
-        
+
     let mut models = Vec::new();
     if let Some(data) = res["data"].as_array() {
         for m in data {
@@ -1788,9 +1933,8 @@ async fn fetch_openrouter_models() -> Result<Vec<String>, Box<dyn std::error::Er
             }
         }
     }
-    
+
     // Sort them alphabetically
     models.sort();
     Ok(models)
 }
-

@@ -1,34 +1,15 @@
-# VISUALIZATION BENCHMARKS — Tadpole Domain Visualization
+# Visualization performance evidence
 
-## 1. Test Configuration & Environment
-- **CPU**: x86_64 Multi-core
-- **OS**: Linux / Windows
-- **Graph Datasets**: Synthetic Deterministic Generator (`src/visualization/synthetic.rs`)
-  - **Small (1k)**: 1,000 Nodes, ~10,000 Edges (Balanced site hierarchy)
-  - **Medium (10k)**: 10,000 Nodes, ~100,000 Edges (Blog & Commerce mix)
-  - **Large (100k)**: 100,000 Nodes, ~1,000,000 Edges (Multi-section synthetic enterprise site)
+The old table listed timings, FPS, memory and 100k-node results without a reproducible harness or raw measurements. Those figures are withdrawn. They must not be used as product claims or release thresholds. The embedded web renderer and persisted cross-session layout cache mentioned there are not implemented in the shipped UI.
 
----
+A reproducible **debug smoke test** exists:
 
-## 2. Benchmark Metrics Table
+```sh
+cargo test --locked --no-default-features test_synthetic_1k_graph_performance -- --nocapture
+```
 
-| Metric | Target Goal | 1k Nodes | 10k Nodes | 100k Nodes (Supernodes) |
-|---|---|---|---|---|
-| **Snapshot Construction** | < 100 ms | < 5 ms | < 45 ms | < 380 ms |
-| **Internal Rank Calculation** | < 500 ms | < 8 ms | < 65 ms | < 420 ms |
-| **Section Hierarchy Grouping** | < 200 ms | < 3 ms | < 25 ms | < 180 ms |
-| **IPC Payload Serialization** | < 200 ms | < 4 ms | < 35 ms | < 290 ms |
-| **Initial Visual Render** | < 1.0 s | < 80 ms | < 340 ms | < 1,200 ms |
-| **Pan / Zoom FPS** | 30 – 60 FPS | 60 FPS | 55 – 60 FPS | 35 – 45 FPS |
-| **Hover Latency** | < 50 ms | < 2 ms | < 5 ms | < 12 ms |
-| **Selection Latency** | < 100 ms | < 4 ms | < 8 ms | < 18 ms |
-| **Filter Update Latency** | < 200 ms | < 5 ms | < 22 ms | < 95 ms |
-| **Peak RAM Memory Overhead** | < 150 MB | ~12 MB | ~48 MB | ~135 MB |
+It generates a deterministic 1,000-node site with seed 123, builds a CSR snapshot, and computes PageRank. Its broad 500ms assertions are smoke thresholds, sensitive to machine load; they do not establish release performance or UI FPS. `test_layout_precomputation` also checks a layout against synthetic data but does not profile actual GTK rendering.
 
----
+For release benchmarking, record CPU/OS/toolchain/build profile, graph nodes/edges and seed, multiple-run distributions, peak memory and a profiler trace. Use representative real crawls after removing private content. Measure startup, input responsiveness, search/filter latency, link analysis and serialization separately. Keep raw output next to any published numbers.
 
-## 3. Optimization Guidelines
-1. **Compressed Sparse Row (CSR)** indexing eliminates pointer chasing during PageRank calculation and node neighbor retrieval.
-2. **String Interning (`StringTable`)** prevents storing duplicate domain prefixes and repetitive path strings millions of times in RAM.
-3. **Supernode Section Aggregation** on >10,000 URL graphs maintains 30+ FPS interactive frame rate by rendering section clusters until user drills down into specific directories.
-4. **Layout Caching** ensures layout coordinates are computed once and re-used across application sessions unless explicitly recomputed by user request.
+This modernization removes per-row full-crawl clones, adds duplicate indexes, throttles aggregate UI refreshes, moves project/Markdown writes off the GTK thread and eliminates repeated stop-word set construction. These are implementation-level cost reductions; no percentage speedup is claimed without before/after measurements.

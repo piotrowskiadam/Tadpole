@@ -3,16 +3,16 @@ use std::collections::HashSet;
 
 use super::snapshot::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum FilterMode {
-    Focus,   // Dim non-matching nodes
+    #[default]
+    Focus, // Dim non-matching nodes
     Hide,    // Hide non-matching nodes but keep layout positions fixed
     Isolate, // Create sub-graph layout for matching nodes only
 }
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GraphFilter {
-
     pub mode: FilterMode,
     pub section_id: Option<SectionId>,
     pub search_query: String,
@@ -24,12 +24,6 @@ pub struct GraphFilter {
     pub only_orphans: bool,
     pub min_internal_rank: Option<f32>,
     pub max_crawl_depth: Option<u16>,
-}
-
-impl Default for FilterMode {
-    fn default() -> Self {
-        FilterMode::Focus
-    }
 }
 
 pub struct FilterResult {
@@ -54,38 +48,38 @@ impl GraphFilter {
         for node in snapshot.nodes.iter() {
             let url = snapshot.node_url(node);
 
-            if let Some(sec_id) = self.section_id {
-                if node.section_id != sec_id {
-                    continue;
-                }
+            if let Some(sec_id) = self.section_id
+                && node.section_id != sec_id
+            {
+                continue;
             }
 
             if !query_lower.is_empty() && !url.to_lowercase().contains(&query_lower) {
                 continue;
             }
 
-            if let Some(ref re) = inc_re {
-                if !re.is_match(url) {
-                    continue;
-                }
+            if let Some(ref re) = inc_re
+                && !re.is_match(url)
+            {
+                continue;
             }
 
-            if let Some(ref re) = exc_re {
-                if re.is_match(url) {
-                    continue;
-                }
+            if let Some(ref re) = exc_re
+                && re.is_match(url)
+            {
+                continue;
             }
 
-            if let Some(min_code) = self.min_status_code {
-                if node.status_code < min_code {
-                    continue;
-                }
+            if let Some(min_code) = self.min_status_code
+                && node.status_code < min_code
+            {
+                continue;
             }
 
-            if let Some(max_code) = self.max_status_code {
-                if node.status_code > max_code {
-                    continue;
-                }
+            if let Some(max_code) = self.max_status_code
+                && node.status_code > max_code
+            {
+                continue;
             }
 
             if self.only_indexable && node.indexability != Indexability::Indexable {
@@ -96,16 +90,16 @@ impl GraphFilter {
                 continue;
             }
 
-            if let Some(min_rank) = self.min_internal_rank {
-                if node.internal_rank < min_rank {
-                    continue;
-                }
+            if let Some(min_rank) = self.min_internal_rank
+                && node.internal_rank < min_rank
+            {
+                continue;
             }
 
-            if let Some(max_d) = self.max_crawl_depth {
-                if node.crawl_depth > max_d {
-                    continue;
-                }
+            if let Some(max_d) = self.max_crawl_depth
+                && node.crawl_depth > max_d
+            {
+                continue;
             }
 
             matching_node_ids.insert(node.id);

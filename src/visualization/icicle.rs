@@ -1,6 +1,5 @@
-use crate::state::CrawlResult;
 use super::snapshot::GraphSnapshot;
-
+use crate::state::CrawlResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum IcicleWeightMetric {
@@ -49,7 +48,6 @@ impl IcicleTreeNode {
     }
 }
 
-
 pub fn build_icicle_tree_from_snapshot(
     snapshot: &GraphSnapshot,
     weight_metric: IcicleWeightMetric,
@@ -74,12 +72,25 @@ pub fn build_icicle_tree_from_snapshot(
             IcicleWeightMetric::UrlCount => 1.0,
             IcicleWeightMetric::PageSizeBytes => node.page_size_bytes as f64,
             IcicleWeightMetric::WordCount => node.word_count as f64,
-            IcicleWeightMetric::IssueCount => if node.issue_mask != 0 { 1.0 } else { 0.0 },
+            IcicleWeightMetric::IssueCount => {
+                if node.issue_mask != 0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             IcicleWeightMetric::InternalRankSum => node.internal_rank as f64,
             IcicleWeightMetric::ResponseTimeMs => node.response_time_ms as f64,
         };
 
-        insert_path_into_icicle(&mut root, path, url, weight, node.status_code >= 400, node.indexability == super::snapshot::Indexability::Indexable);
+        insert_path_into_icicle(
+            &mut root,
+            path,
+            url,
+            weight,
+            node.status_code >= 400,
+            node.indexability == super::snapshot::Indexability::Indexable,
+        );
     }
 
     root
@@ -106,14 +117,27 @@ pub fn build_icicle_tree_from_results(
             IcicleWeightMetric::UrlCount => 1.0,
             IcicleWeightMetric::PageSizeBytes => res.size_bytes as f64,
             IcicleWeightMetric::WordCount => res.word_count as f64,
-            IcicleWeightMetric::IssueCount => if res.status_code.unwrap_or(0) >= 400 || !res.indexable { 1.0 } else { 0.0 },
+            IcicleWeightMetric::IssueCount => {
+                if res.status_code.unwrap_or(0) >= 400 || !res.indexable {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             IcicleWeightMetric::InternalRankSum => 1.0,
             IcicleWeightMetric::ResponseTimeMs => res.response_time_ms as f64,
         };
 
         let is_error = res.status_code.unwrap_or(0) >= 400;
 
-        insert_path_into_icicle(&mut root, &res.url, &res.url, weight, is_error, res.indexable);
+        insert_path_into_icicle(
+            &mut root,
+            &res.url,
+            &res.url,
+            weight,
+            is_error,
+            res.indexable,
+        );
     }
 
     root

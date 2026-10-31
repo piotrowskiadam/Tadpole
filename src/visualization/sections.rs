@@ -37,7 +37,11 @@ pub fn build_supernode_graph(snapshot: &GraphSnapshot) -> SupernodeGraph {
 
     for sec in snapshot.sections.iter() {
         let name = snapshot.strings.get(sec.name_id).unwrap_or("/").to_string();
-        let path_prefix = snapshot.strings.get(sec.path_prefix_id).unwrap_or("/").to_string();
+        let path_prefix = snapshot
+            .strings
+            .get(sec.path_prefix_id)
+            .unwrap_or("/")
+            .to_string();
 
         summaries.insert(
             sec.id,
@@ -114,11 +118,13 @@ pub fn build_supernode_graph(snapshot: &GraphSnapshot) -> SupernodeGraph {
 
     let inter_section_edges = section_edge_weights
         .into_iter()
-        .map(|((source_section, target_section), link_weight)| SupernodeEdge {
-            source_section,
-            target_section,
-            link_weight,
-        })
+        .map(
+            |((source_section, target_section), link_weight)| SupernodeEdge {
+                source_section,
+                target_section,
+                link_weight,
+            },
+        )
         .collect();
 
     SupernodeGraph {

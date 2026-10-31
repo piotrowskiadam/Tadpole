@@ -1,12 +1,12 @@
+use crate::state::CrawlState;
 use adw::prelude::*;
 use glib::Object;
 use glib::subclass::prelude::*;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::rc::Rc;
 use std::cell::RefCell;
-use crate::state::CrawlState;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 enum AnalysisUpdate {
     Progress {
@@ -137,7 +137,7 @@ impl LinkOpportunitiesPanel {
         widget.set_margin_bottom(10);
 
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        
+
         let analyze_button = gtk::Button::builder()
             .label("Analyze Link Opportunities")
             .css_classes(vec!["suggested-action".to_string()])
@@ -195,22 +195,27 @@ impl LinkOpportunitiesPanel {
         split_pane.set_start_child(Some(&opp_box));
 
         // Column setup for opportunities
-        let col_source = Self::create_opp_column("Source Page", false, |info| info.source_url.clone());
+        let col_source =
+            Self::create_opp_column("Source Page", false, |info| info.source_url.clone());
         col_source.set_fixed_width(220);
         col_source.set_resizable(true);
         opp_view.append_column(&col_source);
 
-        let col_target = Self::create_opp_column("Target Page (Suggested)", false, |info| info.target_url.clone());
+        let col_target = Self::create_opp_column("Target Page (Suggested)", false, |info| {
+            info.target_url.clone()
+        });
         col_target.set_fixed_width(220);
         col_target.set_resizable(true);
         opp_view.append_column(&col_target);
 
-        let col_keyword = Self::create_opp_column("Anchor Keyword", false, |info| info.keyword.clone());
+        let col_keyword =
+            Self::create_opp_column("Anchor Keyword", false, |info| info.keyword.clone());
         col_keyword.set_fixed_width(140);
         col_keyword.set_resizable(true);
         opp_view.append_column(&col_keyword);
 
-        let col_context = Self::create_opp_column("Context Snippet", true, |info| info.context.clone());
+        let col_context =
+            Self::create_opp_column("Context Snippet", true, |info| info.context.clone());
         col_context.set_expand(true);
         col_context.set_resizable(true);
         opp_view.append_column(&col_context);
@@ -271,17 +276,17 @@ impl LinkOpportunitiesPanel {
         export_button.connect_clicked(move |btn| {
             let root = btn.root();
             let parent_window = root.as_ref().and_then(|r| r.downcast_ref::<gtk::Window>());
-            
+
             let file_dialog = gtk::FileDialog::new();
             file_dialog.set_title("Export Link Opportunities to CSV");
-            
+
             let filter = gtk::FileFilter::new();
             filter.set_name(Some("CSV Files"));
             filter.add_pattern("*.csv");
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             file_dialog.set_filters(Some(&filters));
-            
+
             let opp_store_inner = opp_store_for_export.clone();
             file_dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
@@ -293,16 +298,20 @@ impl LinkOpportunitiesPanel {
                                 return;
                             }
                         };
-                        
-                        let _ = wtr.write_record(&["Source Page", "Target Page (Suggested)", "Anchor Keyword", "Context Snippet"]);
-                        
+
+                        let _ = wtr.write_record(&[
+                            "Source Page",
+                            "Target Page (Suggested)",
+                            "Anchor Keyword",
+                            "Context Snippet",
+                        ]);
+
                         for i in 0..opp_store_inner.n_items() {
                             if let Some(item) = opp_store_inner.item(i) {
                                 if let Some(row_data) = item.downcast_ref::<OpportunityRowData>() {
                                     if let Some(info) = row_data.get_info() {
-                                        let plain_context = info.context
-                                            .replace("<b>", "")
-                                            .replace("</b>", "");
+                                        let plain_context =
+                                            info.context.replace("<b>", "").replace("</b>", "");
                                         let _ = wtr.write_record(&[
                                             &info.source_url,
                                             &info.target_url,
@@ -325,7 +334,7 @@ impl LinkOpportunitiesPanel {
             cancel_button_clone.set_sensitive(true);
             export_button_clone.set_sensitive(false);
             status_lbl_clone.set_text("Analyzing website structure in background...");
-            
+
             let results = state_clone.get_all_results();
             if results.is_empty() {
                 status_lbl_clone.set_text("No crawled pages to analyze. Please run a crawl first.");
@@ -396,14 +405,14 @@ impl LinkOpportunitiesPanel {
             std::thread::spawn(move || {
                 let mut opportunities = vec![];
                 let mut ngram_counts = HashMap::new();
-                
+
                 let mut target_pages = vec![];
                 for res in &results {
                     if res.status_code.map_or(false, |c| c >= 200 && c < 300) && res.indexable {
                         let title = res.title.clone().unwrap_or_default();
                         let h1 = res.h1.clone().unwrap_or_default();
                         let candidates = get_candidate_keywords(&title, &h1);
-                        
+
                         let kw_chars: Vec<(String, Vec<char>)> = candidates
                             .into_iter()
                             .map(|kw| {
@@ -411,47 +420,47 @@ impl LinkOpportunitiesPanel {
                                 (kw, chars)
                             })
                             .collect();
-                        
+
                         target_pages.push((res.url.clone(), kw_chars));
                     }
                 }
-                
+
                 let total = results.len();
                 for (idx, source) in results.iter().enumerate() {
                     if token.load(Ordering::Relaxed) {
                         let _ = tx.send(AnalysisUpdate::Cancelled);
                         return;
                     }
-                    
+
                     if !source.status_code.map_or(false, |c| c >= 200 && c < 300) {
                         continue;
                     }
-                    
+
                     let source_title = source.title.clone().unwrap_or_default();
                     let source_h1 = source.h1.clone().unwrap_or_default();
                     let source_md = source.markdown.clone().unwrap_or_default();
                     let stripped_md = strip_markdown(&source_md);
-                    
+
                     let mut text_block = format!("{} {} ", source_title, source_h1);
                     for heading in &source.headings {
                         text_block.push_str(&heading.text);
                         text_block.push(' ');
                     }
                     text_block.push_str(&stripped_md);
-                    
+
                     let source_ngrams = generate_page_ngrams(&text_block);
                     let text_chars_lower: Vec<char> = text_block.to_lowercase().chars().collect();
                     let text_chars_original: Vec<char> = text_block.chars().collect();
-                    
+
                     for (target_url, keywords) in &target_pages {
                         if *target_url == source.url {
                             continue;
                         }
-                        
+
                         if source.outlinks.contains(target_url) {
                             continue;
                         }
-                        
+
                         for (kw_original, kw_lower_chars) in keywords {
                             if source_ngrams.contains(kw_original) {
                                 let matches = find_word_matches(&text_chars_lower, kw_lower_chars);
@@ -468,7 +477,7 @@ impl LinkOpportunitiesPanel {
                             }
                         }
                     }
-                    
+
                     // Collect N-grams
                     let mut ngram_text = format!("{} ", source_title);
                     if !source_h1.is_empty() {
@@ -479,7 +488,7 @@ impl LinkOpportunitiesPanel {
                         ngram_text.push_str(&heading.text);
                         ngram_text.push(' ');
                     }
-                    
+
                     let words = clean_and_tokenize(&ngram_text);
                     let n = words.len();
                     for len in 1..=4 {
@@ -499,7 +508,7 @@ impl LinkOpportunitiesPanel {
                             }
                         }
                     }
-                    
+
                     // Send progress update (counts only to keep UI extremely fast)
                     if idx % 10 == 0 || idx == total - 1 {
                         let _ = tx.send(AnalysisUpdate::Progress {
@@ -510,7 +519,7 @@ impl LinkOpportunitiesPanel {
                         });
                     }
                 }
-                
+
                 let mut final_ngrams: Vec<NgramInfo> = ngram_counts
                     .into_iter()
                     .map(|(phrase, count)| {
@@ -524,10 +533,10 @@ impl LinkOpportunitiesPanel {
                     .filter(|n| n.frequency > 1)
                     .collect();
                 final_ngrams.sort_by(|a, b| b.frequency.cmp(&a.frequency));
-                
+
                 // Truncate to top 200 items to keep UI update instantaneous
                 final_ngrams.truncate(200);
-                
+
                 let _ = tx.send(AnalysisUpdate::Finished {
                     opps: opportunities,
                     ngrams: final_ngrams,
@@ -571,7 +580,8 @@ impl LinkOpportunitiesPanel {
     pub fn clear(&self) {
         self.opp_store.remove_all();
         self.ngram_store.remove_all();
-        self.status_label.set_text("Ready (click Analyze to process crawled pages)");
+        self.status_label
+            .set_text("Ready (click Analyze to process crawled pages)");
     }
 
     fn create_opp_column<F>(title: &str, use_markup: bool, select_fn: F) -> gtk::ColumnViewColumn
@@ -594,7 +604,10 @@ impl LinkOpportunitiesPanel {
         factory.connect_bind(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let label = list_item.child().and_downcast::<gtk::Label>().unwrap();
-            let row_data = list_item.item().and_downcast::<OpportunityRowData>().unwrap();
+            let row_data = list_item
+                .item()
+                .and_downcast::<OpportunityRowData>()
+                .unwrap();
             if let Some(info) = row_data.get_info() {
                 let text = select_fn(&info);
                 if use_markup {
@@ -641,18 +654,115 @@ impl LinkOpportunitiesPanel {
 // ==========================================
 
 fn is_stop_word(word: &str) -> bool {
-    let stop_words: std::collections::HashSet<&str> = [
-        "the", "a", "an", "and", "or", "but", "if", "then", "else", "to", "in", "on", "at", "by", "for", 
-        "with", "about", "of", "is", "are", "was", "were", "be", "been", "have", "has", "had", "this", 
-        "that", "these", "those", "from", "our", "your", "their", "my", "its", "i", "you", "we", "they", 
-        "he", "she", "it",
-        "i", "w", "na", "z", "do", "o", "u", "dla", "ze", "za", "po", "oraz", "jest", "sa", "są", "wraz", 
-        "pod", "nad", "przed", "miedzy", "między", "przez", "od", "takze", "także", "lub", "albo", "czy", 
-        "bo", "poniewaz", "ponieważ", "gdyz", "gdyż", "ale", "lecz", "jednak", "a", "ze", "że", "to", "sie", "się",
-        "go", "mu", "ich", "je", "ją", "jej", "jego", "nimi", "nim", "by", "być", "byc", "o"
-    ].iter().cloned().collect();
-    
-    stop_words.contains(word)
+    static STOP_WORDS: std::sync::LazyLock<std::collections::HashSet<&'static str>> =
+        std::sync::LazyLock::new(|| {
+            [
+                "the",
+                "a",
+                "an",
+                "and",
+                "or",
+                "but",
+                "if",
+                "then",
+                "else",
+                "to",
+                "in",
+                "on",
+                "at",
+                "by",
+                "for",
+                "with",
+                "about",
+                "of",
+                "is",
+                "are",
+                "was",
+                "were",
+                "be",
+                "been",
+                "have",
+                "has",
+                "had",
+                "this",
+                "that",
+                "these",
+                "those",
+                "from",
+                "our",
+                "your",
+                "their",
+                "my",
+                "its",
+                "i",
+                "you",
+                "we",
+                "they",
+                "he",
+                "she",
+                "it",
+                "i",
+                "w",
+                "na",
+                "z",
+                "do",
+                "o",
+                "u",
+                "dla",
+                "ze",
+                "za",
+                "po",
+                "oraz",
+                "jest",
+                "sa",
+                "są",
+                "wraz",
+                "pod",
+                "nad",
+                "przed",
+                "miedzy",
+                "między",
+                "przez",
+                "od",
+                "takze",
+                "także",
+                "lub",
+                "albo",
+                "czy",
+                "bo",
+                "poniewaz",
+                "ponieważ",
+                "gdyz",
+                "gdyż",
+                "ale",
+                "lecz",
+                "jednak",
+                "a",
+                "ze",
+                "że",
+                "to",
+                "sie",
+                "się",
+                "go",
+                "mu",
+                "ich",
+                "je",
+                "ją",
+                "jej",
+                "jego",
+                "nimi",
+                "nim",
+                "by",
+                "być",
+                "byc",
+                "o",
+            ]
+            .iter()
+            .cloned()
+            .collect()
+        });
+
+    STOP_WORDS.contains(word)
 }
 
 fn clean_text(text: &str) -> String {
@@ -678,21 +788,21 @@ fn clean_and_tokenize(text: &str) -> Vec<String> {
 
 fn get_candidate_keywords(title: &str, h1: &str) -> Vec<String> {
     let mut candidates = std::collections::HashSet::new();
-    
+
     for source in &[title, h1] {
         let words = clean_and_tokenize(source);
         let n = words.len();
-        
+
         // 1-gram candidate if it is the whole phrase and not a stop word
         if n == 1 && !is_stop_word(&words[0]) && words[0].len() >= 4 {
             candidates.insert(words[0].clone());
         }
-        
+
         // 2 to 4-grams
         for len in 2..=4 {
             if n >= len {
                 for i in 0..=(n - len) {
-                    let gram = &words[i..i+len];
+                    let gram = &words[i..i + len];
                     if is_stop_word(&gram[0]) || is_stop_word(&gram[len - 1]) {
                         continue;
                     }
@@ -707,7 +817,7 @@ fn get_candidate_keywords(title: &str, h1: &str) -> Vec<String> {
             }
         }
     }
-    
+
     candidates.into_iter().collect()
 }
 
@@ -751,7 +861,7 @@ fn find_word_matches(chars: &[char], keyword_chars: &[char]) -> Vec<usize> {
     if m == 0 || n < m {
         return matches;
     }
-    
+
     for i in 0..=(n - m) {
         let mut matched = true;
         for j in 0..m {
@@ -760,20 +870,20 @@ fn find_word_matches(chars: &[char], keyword_chars: &[char]) -> Vec<usize> {
                 break;
             }
         }
-        
+
         if matched {
             let boundary_before = if i == 0 {
                 true
             } else {
                 !chars[i - 1].is_alphanumeric()
             };
-            
+
             let boundary_after = if i + m >= n {
                 true
             } else {
                 !chars[i + m].is_alphanumeric()
             };
-            
+
             if boundary_before && boundary_after {
                 matches.push(i);
             }
@@ -783,29 +893,40 @@ fn find_word_matches(chars: &[char], keyword_chars: &[char]) -> Vec<usize> {
 }
 
 fn get_context_snippet(chars: &[char], match_char_idx: usize, kw_char_len: usize) -> String {
-    let start_char = if match_char_idx > 35 { match_char_idx - 35 } else { 0 };
+    let start_char = if match_char_idx > 35 {
+        match_char_idx - 35
+    } else {
+        0
+    };
     let end_char = std::cmp::min(chars.len(), match_char_idx + kw_char_len + 35);
-    
+
     let prefix: String = chars[start_char..match_char_idx].iter().collect();
-    let matched: String = chars[match_char_idx..match_char_idx + kw_char_len].iter().collect();
-    let suffix: String = chars[match_char_idx + kw_char_len..end_char].iter().collect();
-    
+    let matched: String = chars[match_char_idx..match_char_idx + kw_char_len]
+        .iter()
+        .collect();
+    let suffix: String = chars[match_char_idx + kw_char_len..end_char]
+        .iter()
+        .collect();
+
     let clean_prefix = glib::markup_escape_text(&prefix);
     let clean_matched = glib::markup_escape_text(&matched);
     let clean_suffix = glib::markup_escape_text(&suffix);
-    
-    format!("...{}<b>{}</b>{}...", clean_prefix, clean_matched, clean_suffix)
+
+    format!(
+        "...{}<b>{}</b>{}...",
+        clean_prefix, clean_matched, clean_suffix
+    )
 }
 
 fn generate_page_ngrams(text: &str) -> std::collections::HashSet<String> {
     let words = clean_and_tokenize(text);
     let mut ngrams = std::collections::HashSet::new();
     let n = words.len();
-    
+
     for len in 1..=4 {
         if n >= len {
             for i in 0..=(n - len) {
-                let phrase = words[i..i+len].join(" ");
+                let phrase = words[i..i + len].join(" ");
                 ngrams.insert(phrase);
             }
         }

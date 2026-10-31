@@ -1,4 +1,4 @@
-use crate::state::{CrawlResult, CrawlState, ImageInfo, HeadingEntry, CrawlConfig, CrawlMode};
+use crate::state::{CrawlConfig, CrawlMode, CrawlResult, CrawlState, HeadingEntry, ImageInfo};
 use scraper::{Html, Selector};
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +8,7 @@ use url::Url;
 #[derive(Debug)]
 pub enum CrawlUpdate {
     Discovered(String),
-    Crawled(CrawlResult),
+    Crawled(Box<CrawlResult>),
     Finished,
 }
 
@@ -16,11 +16,57 @@ pub struct Crawler {
     state: CrawlState,
     client: reqwest::Client,
     tx: tokio::sync::mpsc::UnboundedSender<CrawlUpdate>,
+    include: Option<regex::Regex>,
+    exclude: Option<regex::Regex>,
+}
+
+/// Immutable settings shared by workers for one crawl; robots cache is scoped to origins.
+struct CrawlRun {
+    client: reqwest::Client,
+    base_domain: String,
+    queue_tx: mpsc::UnboundedSender<(String, usize)>,
+    browser: Option<Arc<headless_chrome::Browser>>,
+    robots_client: reqwest::Client,
+    robots: tokio::sync::Mutex<std::collections::HashMap<String, crate::robots::RobotsRules>>,
+    config: CrawlConfig,
+    catalogue_url: Option<String>,
+}
+
+impl CrawlRun {
+    async fn robots_rules(&self, target: &str) -> Result<crate::robots::RobotsRules, String> {
+        let target = Url::parse(target).map_err(|_| "Invalid robots origin")?;
+        let origin = target.origin().ascii_serialization();
+        // Serialize cold-cache fetches so concurrent pages on an origin fetch robots once.
+        let mut cache = self.robots.lock().await;
+        if let Some(rules) = cache.get(&origin) {
+            return Ok(rules.clone());
+        }
+        let response = self
+            .robots_client
+            .get(format!("{origin}/robots.txt"))
+            .send()
+            .await
+            .map_err(|_| "Cannot fetch robots.txt. Try again or review robots settings.")?;
+        let status = response.status();
+        if status.is_server_error() || status.as_u16() == 429 {
+            return Err(format!(
+                "robots.txt returned HTTP {status}; crawling this origin is suspended."
+            ));
+        }
+        let rules = if status.is_success() {
+            let body = crate::http::read_body(response, 512 * 1024).await?;
+            crate::robots::parse(&String::from_utf8_lossy(&body), &self.config.user_agent)
+        } else {
+            crate::robots::RobotsRules::default()
+        };
+        cache.insert(origin, rules.clone());
+        Ok(rules)
+    }
 }
 
 pub fn clean_seed_url(url: &str) -> String {
     let cleaned = url.trim();
-    if !cleaned.starts_with("http://") && !cleaned.starts_with("https://") {
+    if !cleaned.contains("://") {
         format!("https://{}", cleaned)
     } else {
         cleaned.to_string()
@@ -31,18 +77,23 @@ fn get_catalogue_url(seed: &str) -> Option<String> {
     if let Ok(mut parsed) = url::Url::parse(seed) {
         parsed.set_query(None);
         parsed.set_fragment(None);
-        
+
         let (is_empty_or_root, ends_with_slash) = {
             let path = parsed.path();
             (path == "/" || path.is_empty(), path.ends_with('/'))
         };
-        
+
         if is_empty_or_root || ends_with_slash {
             return Some(parsed.to_string());
         }
 
-        let non_empty_segments: Vec<String> = parsed.path_segments()
-            .map(|s| s.filter(|seg| !seg.is_empty()).map(|seg| seg.to_string()).collect::<Vec<_>>())
+        let non_empty_segments: Vec<String> = parsed
+            .path_segments()
+            .map(|s| {
+                s.filter(|seg| !seg.is_empty())
+                    .map(|seg| seg.to_string())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
 
         if non_empty_segments.is_empty() {
@@ -53,10 +104,7 @@ fn get_catalogue_url(seed: &str) -> Option<String> {
         let has_dot = last_segment.contains('.');
 
         if let Ok(mut segs) = parsed.path_segments_mut() {
-            if has_dot {
-                segs.pop();
-                segs.push("");
-            } else if non_empty_segments.len() > 1 {
+            if has_dot || non_empty_segments.len() > 1 {
                 segs.pop();
                 segs.push("");
             } else {
@@ -69,16 +117,28 @@ fn get_catalogue_url(seed: &str) -> Option<String> {
     }
 }
 
-
 impl Crawler {
     pub fn new(state: CrawlState, tx: tokio::sync::mpsc::UnboundedSender<CrawlUpdate>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
-            .user_agent("Tadpole/0.1 (Desktop SEO Auditor)")
+            .user_agent(concat!("Tadpole/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default();
 
-        Self { state, client, tx }
+        let config = state.get_config();
+        Self {
+            state,
+            client,
+            tx,
+            include: config
+                .include_regex
+                .as_deref()
+                .and_then(|v| regex::Regex::new(v).ok()),
+            exclude: config
+                .exclude_regex
+                .as_deref()
+                .and_then(|v| regex::Regex::new(v).ok()),
+        }
     }
 
     pub async fn start(self, seed_url_str: String) {
@@ -90,63 +150,71 @@ impl Crawler {
             }
             let cleaned_with_proto = clean_seed_url(cleaned);
             match Url::parse(&cleaned_with_proto) {
-                Ok(url) => {
+                Ok(mut url)
+                    if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() =>
+                {
+                    url.set_fragment(None);
                     seed_urls.push(url);
                 }
-                Err(e) => {
+                _ => {
                     let err_res = CrawlResult::new_failed(
                         cleaned_with_proto.clone(),
                         None,
-                        Some(format!("Invalid URL: {}", e)),
+                        Some("Enter an HTTP or HTTPS website URL".to_string()),
                         "Failed Connection".to_string(),
                         0,
                         0,
                     );
-                    let _ = self.tx.send(CrawlUpdate::Crawled(err_res));
-                }
-            }
-        }
-
-        if seed_urls.is_empty() {
-            let _ = self.tx.send(CrawlUpdate::Finished);
-            return;
-        }
-
-        let config = self.state.get_config();
-
-        let mut catalogue_url = None;
-        if config.crawl_mode == CrawlMode::Path {
-            if let Some(cat) = get_catalogue_url(seed_urls[0].as_str()) {
-                if let Ok(cat_parsed) = Url::parse(&cat) {
-                    catalogue_url = Some(cat.clone());
-                    if !seed_urls.iter().any(|u| u.as_str() == cat) {
-                        seed_urls.push(cat_parsed);
+                    if self.state.add_discovered(&cleaned_with_proto) {
+                        self.state.insert_result(err_res.clone());
+                        let _ = self.tx.send(CrawlUpdate::Crawled(Box::new(err_res)));
                     }
                 }
             }
         }
 
-        let base_domain = seed_urls[0].domain().unwrap_or("localhost").to_string();
+        if seed_urls.is_empty() {
+            self.state.set_crawling(false);
+            let _ = self.tx.send(CrawlUpdate::Finished);
+            return;
+        }
+
+        let config = self.state.get_config();
+        if config.validate().is_err() {
+            self.state.set_crawling(false);
+            let _ = self.tx.send(CrawlUpdate::Finished);
+            return;
+        }
+
+        let mut catalogue_url = None;
+        if config.crawl_mode == CrawlMode::Path
+            && let Some(cat) = get_catalogue_url(seed_urls[0].as_str())
+            && let Ok(cat_parsed) = Url::parse(&cat)
+        {
+            catalogue_url = Some(cat.clone());
+            if !seed_urls.iter().any(|u| u.as_str() == cat) {
+                seed_urls.push(cat_parsed);
+            }
+        }
+
+        let base_domain = seed_urls[0].host_str().unwrap_or("localhost").to_string();
 
         self.state.set_crawling(true);
         self.state.set_paused(false);
 
         // Queue for URLs and depth to process (managed within async tokio task)
-        let (queue_tx, mut queue_rx) = mpsc::channel::<(String, usize)>(10000);
-        let queue_tx = Arc::new(queue_tx);
+        let (queue_tx, mut queue_rx) = mpsc::unbounded_channel::<(String, usize)>();
 
         // Seed url discovery
         for url in &seed_urls {
             let url_str = url.as_str().to_string();
-            self.state.add_discovered(&url_str);
-            let _ = self.tx.send(CrawlUpdate::Discovered(url_str.clone()));
-            let _ = queue_tx.send((url_str, 0)).await;
+            if self.state.add_discovered(&url_str) {
+                let _ = queue_tx.send((url_str, 0));
+            }
         }
 
-        let active_tasks = Arc::new(tokio::sync::Mutex::new(0));
-        let max_concurrent_tasks = config.max_concurrency;
+        let max_concurrent_tasks = config.max_concurrency.clamp(1, 50);
         let crawler_arc = Arc::new(self);
-        let base_domain = Arc::new(base_domain);
 
         // Re-build reqwest client according to settings
         let mut client_builder = reqwest::Client::builder()
@@ -157,113 +225,73 @@ impl Crawler {
         }
         let client = client_builder.build().unwrap_or(crawler_arc.client.clone());
 
-        // Respect robots.txt setup
-        let mut disallowed_paths = vec![];
-        if config.respect_robots {
-            if let Ok(robots_url) = seed_urls[0].join("/robots.txt") {
-                if let Ok(res) = client.get(robots_url.as_str()).send().await {
-                    if res.status().is_success() {
-                        if let Ok(text) = res.text().await {
-                            disallowed_paths = parse_robots_txt(&text, &config.user_agent);
-                        }
-                    }
-                }
-            }
-        }
-        let disallowed_paths = Arc::new(disallowed_paths);
-
         // JavaScript rendering browser setup
         let browser = if config.js_rendering {
-            let options = headless_chrome::LaunchOptions::default_builder()
-                .headless(true)
-                .path(Some(std::path::PathBuf::from("/usr/bin/google-chrome")))
-                .build()
-                .expect("Failed to build LaunchOptions");
-            match headless_chrome::Browser::new(options) {
-                Ok(b) => Some(Arc::new(b)),
-                Err(e) => {
-                    eprintln!("Failed to launch headless chrome: {}", e);
-                    None
-                }
-            }
+            tokio::task::spawn_blocking(|| {
+                let options = headless_chrome::LaunchOptions::default_builder()
+                    .headless(true)
+                    .build()
+                    .ok()?;
+                headless_chrome::Browser::new(options).ok().map(Arc::new)
+            })
+            .await
+            .ok()
+            .flatten()
         } else {
             None
         };
 
+        let robots_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent(&config.user_agent)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .unwrap_or_else(|_| client.clone());
+        let run = Arc::new(CrawlRun {
+            client,
+            base_domain,
+            queue_tx,
+            browser,
+            robots_client,
+            robots: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            config: config.clone(),
+            catalogue_url,
+        });
+
+        // The coordinator owns all workers. Finished is emitted only after every worker
+        // has completed or been cancelled; no detached task can modify a later crawl.
+        let mut workers = tokio::task::JoinSet::new();
         loop {
-            // Check if crawling was turned off from the main UI
             if !crawler_arc.state.is_crawling() {
+                workers.abort_all();
+                while workers.join_next().await.is_some() {}
                 break;
             }
-
-            // Handle pause state
-            if crawler_arc.state.is_paused() {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                continue;
-            }
-
-            // Check limit
-            if crawler_arc.state.check_limit_reached() {
-                break;
-            }
-
-            let active = *active_tasks.lock().await;
-
-            if active >= max_concurrent_tasks {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                continue;
-            }
-
-            tokio::select! {
-                maybe_task = queue_rx.recv() => {
-                    match maybe_task {
-                        Some((target_url, depth)) => {
-                            let mut count = active_tasks.lock().await;
-                            *count += 1;
-
-                            let c_state = crawler_arc.state.clone();
-                            let c_client = client.clone();
-                            let c_tx = crawler_arc.tx.clone();
-                            let c_queue_tx = queue_tx.clone();
-                            let c_base_domain = base_domain.clone();
-                            let c_active_tasks = active_tasks.clone();
-                            let c_crawler = crawler_arc.clone();
-                            let c_browser = browser.clone();
-                            let c_disallowed = disallowed_paths.clone();
-                            let c_config = config.clone();
-                            let c_catalogue_url = catalogue_url.clone();
-
-                            tokio::spawn(async move {
-                                let result = c_crawler.crawl_url(
-                                    &target_url, 
-                                    depth,
-                                    &c_client, 
-                                    &c_base_domain, 
-                                    &c_queue_tx, 
-                                    &c_state,
-                                    c_browser,
-                                    &c_disallowed,
-                                    &c_config,
-                                    c_catalogue_url.as_deref(),
-                                ).await;
-                                c_state.insert_result(result.clone());
-                                let _ = c_tx.send(CrawlUpdate::Crawled(result));
-
-                                let mut count = c_active_tasks.lock().await;
-                                *count -= 1;
-                            });
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                    // Timeout check - if active tasks is 0, then we are done
-                    if active == 0 {
+            if !crawler_arc.state.is_paused() {
+                while workers.len() < max_concurrent_tasks
+                    && crawler_arc.state.get_stats().crawled + workers.len() < config.max_urls
+                {
+                    let Ok((target_url, depth)) = queue_rx.try_recv() else {
                         break;
+                    };
+                    let crawler = crawler_arc.clone();
+                    let run = run.clone();
+                    workers.spawn(async move { crawler.crawl_url(&target_url, depth, &run).await });
+                }
+            }
+            if workers.is_empty()
+                && (queue_rx.is_empty() || crawler_arc.state.check_limit_reached())
+            {
+                break;
+            }
+            tokio::select! {
+                result = workers.join_next(), if !workers.is_empty() => {
+                    if let Some(Ok(result)) = result {
+                        crawler_arc.state.insert_result(result.clone());
+                        let _ = crawler_arc.tx.send(CrawlUpdate::Crawled(Box::new(result)));
                     }
                 }
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
             }
         }
 
@@ -271,19 +299,14 @@ impl Crawler {
         let _ = crawler_arc.tx.send(CrawlUpdate::Finished);
     }
 
-    async fn crawl_url(
-        &self,
-        url_str: &str,
-        depth: usize,
-        client: &reqwest::Client,
-        base_domain: &str,
-        queue_tx: &mpsc::Sender<(String, usize)>,
-        state: &CrawlState,
-        browser: Option<Arc<headless_chrome::Browser>>,
-        disallowed: &[String],
-        config: &CrawlConfig,
-        catalogue_url: Option<&str>,
-    ) -> CrawlResult {
+    async fn crawl_url(&self, url_str: &str, depth: usize, run: &CrawlRun) -> CrawlResult {
+        let client = &run.client;
+        let config = &run.config;
+        let queue_tx = &run.queue_tx;
+        let base_domain = &run.base_domain;
+        let catalogue_url = run.catalogue_url.as_deref();
+        let state = &self.state;
+        let browser = &run.browser;
         let start_time = std::time::Instant::now();
         let _parsed_url = match Url::parse(url_str) {
             Ok(url) => url,
@@ -300,17 +323,33 @@ impl Crawler {
             }
         };
 
-        // Respect robots.txt
-        if is_disallowed(url_str, disallowed) {
-            let elapsed = start_time.elapsed().as_millis() as u32;
-            return CrawlResult::new_failed(
-                url_str.to_string(),
-                None,
-                Some("Blocked by robots.txt".to_string()),
-                "Blocked by Robots.txt".to_string(),
-                depth,
-                elapsed,
-            );
+        if config.respect_robots {
+            match run.robots_rules(url_str).await {
+                Ok(rules) if rules.allows(url_str) => {}
+                Ok(_) => {
+                    return CrawlResult::new_failed(
+                        url_str.into(),
+                        None,
+                        Some("Blocked by robots.txt".into()),
+                        "Blocked by Robots.txt".into(),
+                        depth,
+                        start_time.elapsed().as_millis() as u32,
+                    );
+                }
+                Err(error) => {
+                    return CrawlResult::new_failed(
+                        url_str.into(),
+                        None,
+                        Some(error),
+                        "Robots Unavailable".into(),
+                        depth,
+                        start_time.elapsed().as_millis() as u32,
+                    );
+                }
+            }
+        }
+        if config.js_rendering && browser.is_none() {
+            return CrawlResult::new_failed(url_str.into(), None, Some("JavaScript rendering requires an installed Chrome/Chromium. Install it or disable rendering in Preferences.".into()), "Rendering Failed".into(), depth, 0);
         }
 
         // Fetch page
@@ -333,7 +372,16 @@ impl Crawler {
         let status_code = status.as_u16();
 
         // Handle Redirects manually or check response URL
-        let _final_url = response.url().to_string();
+        let final_url = response.url().to_string();
+        let header_noindex = response
+            .headers()
+            .get("x-robots-tag")
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|v| {
+                v.to_ascii_lowercase()
+                    .split([',', ' '])
+                    .any(|v| v == "noindex" || v == "none")
+            });
         let mut indexability_status = "Indexable".to_string();
         let mut indexable = true;
 
@@ -378,34 +426,67 @@ impl Crawler {
         let mut markdown_content = None;
 
         if is_html && (status.is_success() || status_code == 200) {
-            if let Ok(bytes) = response.bytes().await {
-                body_bytes = bytes.to_vec();
-                
+            let bytes = match crate::http::read_body(response, 8 * 1024 * 1024).await {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return CrawlResult::new_failed(
+                        url_str.into(),
+                        Some(status_code),
+                        Some(error),
+                        "Body Read Error".into(),
+                        depth,
+                        start_time.elapsed().as_millis() as u32,
+                    );
+                }
+            };
+            {
+                body_bytes = bytes;
+
                 // Headless JS rendering check
                 let mut html_str = String::from_utf8_lossy(&body_bytes).to_string();
-                if let Some(ref b) = browser {
-                    if let Ok(tab) = b.new_tab() {
-                        if tab.navigate_to(url_str).is_ok() {
-                            if tab.wait_until_navigated().is_ok() {
-                                tokio::time::sleep(Duration::from_millis(800)).await;
-                                if let Ok(rendered) = tab.get_content() {
-                                    html_str = rendered;
-                                }
-                            }
+                if let Some(browser) = browser {
+                    let browser = browser.clone();
+                    let target = url_str.to_string();
+                    let rendered =
+                        tokio::task::spawn_blocking(move || -> Result<String, String> {
+                            let tab = browser.new_tab().map_err(|e| e.to_string())?;
+                            let result = (|| {
+                                tab.navigate_to(&target).map_err(|e| e.to_string())?;
+                                tab.wait_until_navigated().map_err(|e| e.to_string())?;
+                                tab.get_content().map_err(|e| e.to_string())
+                            })();
+                            let _ = tab.close(true);
+                            result
+                        })
+                        .await;
+                    match rendered {
+                        Ok(Ok(html)) if html.len() <= 8 * 1024 * 1024 => html_str = html,
+                        _ => {
+                            return CrawlResult::new_failed(
+                                url_str.into(),
+                                Some(status_code),
+                                Some(
+                                    "Chrome could not render this page within the content limit."
+                                        .into(),
+                                ),
+                                "Rendering Failed".into(),
+                                depth,
+                                start_time.elapsed().as_millis() as u32,
+                            );
                         }
-                        let _ = tab.close(true);
                     }
                 }
 
-                let mut parsed = parse_html(url_str, &html_str, base_domain, &config);
+                let mut parsed = parse_html(&final_url, &html_str, base_domain, config);
 
                 // Download images locally if configured
-                if config.download_images {
-                    if let Some(ref proj_dir) = config.project_dir {
-                        for img in &mut parsed.images {
-                            if let Some(path) = download_image_to_dir(&img.src, client, proj_dir).await {
-                                img.local_path = Some(path);
-                            }
+                if config.download_images
+                    && let Some(ref proj_dir) = config.project_dir
+                {
+                    for img in &mut parsed.images {
+                        if let Some(path) = download_image_to_dir(&img.src, client, proj_dir).await
+                        {
+                            img.local_path = Some(path);
                         }
                     }
                 }
@@ -434,54 +515,54 @@ impl Crawler {
                 schema_errors = parsed.schema_errors;
                 headings = parsed.headings;
 
-                if parsed.noindex {
+                if parsed.noindex || header_noindex {
                     indexability_status = "Noindex".to_string();
                     indexable = false;
-                } else if let Some(ref can_url) = canonical {
-                    if can_url != url_str {
-                        indexability_status = "Canonicalised".to_string();
-                        indexable = false;
-                    }
+                } else if let Some(ref can_url) = canonical
+                    && can_url != &final_url
+                {
+                    indexability_status = "Canonicalised".to_string();
+                    indexable = false;
                 }
 
                 // Process discovered URLs if in Crawl or Path Mode
                 if config.crawl_mode == CrawlMode::Crawl || config.crawl_mode == CrawlMode::Path {
                     let next_depth = depth + 1;
-                    let under_depth_limit = config.max_depth.map_or(true, |max_d| next_depth <= max_d);
+                    let under_depth_limit =
+                        config.max_depth.is_none_or(|max_d| next_depth <= max_d);
 
                     if under_depth_limit {
                         for clean_str in parsed.local_queue {
                             let mut is_allowed = true;
 
                             // If Path mode, the URL must belong to the catalogue
-                            if config.crawl_mode == CrawlMode::Path {
-                                if let Some(cat_url) = catalogue_url {
-                                    if !clean_str.starts_with(cat_url) {
-                                        is_allowed = false;
-                                    }
-                                }
+                            if config.crawl_mode == CrawlMode::Path
+                                && let Some(cat_url) = catalogue_url
+                                && !clean_str.starts_with(cat_url)
+                            {
+                                is_allowed = false;
                             }
 
                             if is_allowed {
-                                if let Some(ref incl) = config.include_regex {
-                                    if let Ok(re) = regex::Regex::new(incl) {
+                                if let Some(ref re) = self.include {
+                                    {
                                         is_allowed = re.is_match(&clean_str);
                                     }
                                 }
-                                if is_allowed {
-                                    if let Some(ref excl) = config.exclude_regex {
-                                        if let Ok(re) = regex::Regex::new(excl) {
-                                            if re.is_match(&clean_str) {
-                                                is_allowed = false;
-                                            }
+                                if is_allowed && let Some(ref re) = self.exclude {
+                                    {
+                                        if re.is_match(&clean_str) {
+                                            is_allowed = false;
                                         }
                                     }
                                 }
 
                                 if is_allowed {
                                     if state.add_discovered(&clean_str) {
-                                        let _ = self.tx.send(CrawlUpdate::Discovered(clean_str.clone()));
-                                        let _ = queue_tx.send((clean_str.clone(), next_depth)).await;
+                                        let _ = self
+                                            .tx
+                                            .send(CrawlUpdate::Discovered(clean_str.clone()));
+                                        let _ = queue_tx.send((clean_str.clone(), next_depth));
                                     }
                                     state.add_inlink(&clean_str, url_str);
                                 }
@@ -489,19 +570,26 @@ impl Crawler {
                         }
                     }
                 }
-                
+
                 let md = crate::markdown::html_to_markdown(&html_str, config);
                 markdown_content = Some(md);
             }
-        } else if !status.is_success() {
+        } else if !status.is_success() && !status.is_redirection() {
             indexable = false;
             indexability_status = "Non-200 Status Code".to_string();
+        } else if !is_html && status.is_success() {
+            indexable = false;
+            indexability_status = "Non-HTML Resource".to_string();
         }
 
         CrawlResult {
             url: url_str.to_string(),
             status_code: Some(status_code),
-            error_message: if status.is_success() { None } else { Some(status.to_string()) },
+            error_message: if status.is_success() {
+                None
+            } else {
+                Some(status.to_string())
+            },
             indexable,
             indexability_status,
             title,
@@ -541,8 +629,8 @@ pub fn get_slug_filename(url_str: &str) -> String {
         if path.is_empty() {
             return "index".to_string();
         }
-        
-        if let Some(last_segment) = path.split('/').last() {
+
+        if let Some(last_segment) = path.split('/').next_back() {
             let segment_no_ext = if let Some(idx) = last_segment.rfind('.') {
                 if idx > 0 {
                     &last_segment[..idx]
@@ -552,11 +640,11 @@ pub fn get_slug_filename(url_str: &str) -> String {
             } else {
                 last_segment
             };
-            
+
             if segment_no_ext.is_empty() {
                 return "index".to_string();
             }
-            
+
             let mut slug = String::new();
             for c in segment_no_ext.chars() {
                 if c.is_alphanumeric() || c == '-' || c == '_' {
@@ -568,7 +656,7 @@ pub fn get_slug_filename(url_str: &str) -> String {
             return slug;
         }
     }
-    
+
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
@@ -576,75 +664,35 @@ pub fn get_slug_filename(url_str: &str) -> String {
     format!("page_{}", hasher.finish())
 }
 
-fn parse_robots_txt(content: &str, user_agent: &str) -> Vec<String> {
-    let mut disallowed = vec![];
-    let mut is_applicable = false;
-    
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        
-        let parts: Vec<&str> = line.splitn(2, ':').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        
-        let directive = parts[0].trim().to_lowercase();
-        let value = parts[1].trim();
-        
-        if directive == "user-agent" {
-            let ua = value.to_lowercase();
-            is_applicable = ua == "*" || ua == user_agent.to_lowercase() || user_agent.to_lowercase().contains(&ua);
-        } else if directive == "disallow" && is_applicable {
-            if !value.is_empty() {
-                disallowed.push(value.to_string());
-            }
-        }
-    }
-    disallowed
-}
-
-fn is_disallowed(url_str: &str, disallowed: &[String]) -> bool {
-    if let Ok(parsed) = Url::parse(url_str) {
-        let path = parsed.path();
-        for dis in disallowed {
-            if path.starts_with(dis) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-async fn download_image_to_dir(img_url: &str, client: &reqwest::Client, project_dir: &str) -> Option<String> {
+async fn download_image_to_dir(
+    img_url: &str,
+    client: &reqwest::Client,
+    project_dir: &str,
+) -> Option<String> {
     if let Ok(parsed) = Url::parse(img_url) {
-        let path_segments = parsed.path_segments()?;
-        let last_segment = path_segments.last().unwrap_or("image.png");
+        let mut path_segments = parsed.path_segments()?;
+        let last_segment = path_segments.next_back().unwrap_or("image.png");
         let ext = std::path::Path::new(last_segment)
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("png");
-        
+
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         img_url.hash(&mut hasher);
         let hash_val = hasher.finish();
         let filename = format!("{}.{}", hash_val, ext);
-        
+
         let images_dir = std::path::Path::new(project_dir).join("images");
         if std::fs::create_dir_all(&images_dir).is_ok() {
             let dest_path = images_dir.join(&filename);
-            if let Ok(res) = client.get(img_url).send().await {
-                if res.status().is_success() {
-                    if let Ok(bytes) = res.bytes().await {
-                        if std::fs::write(&dest_path, bytes).is_ok() {
-                            return Some(dest_path.to_string_lossy().to_string());
-                        }
-                    }
-                }
+            if let Ok(res) = client.get(img_url).send().await
+                && res.status().is_success()
+                && let Ok(bytes) = crate::http::read_body(res, 20 * 1024 * 1024).await
+                && std::fs::write(&dest_path, bytes).is_ok()
+            {
+                return Some(dest_path.to_string_lossy().to_string());
             }
         }
     }
@@ -664,7 +712,7 @@ pub struct ParsedData {
     pub outlinks: Vec<String>,
     pub images: Vec<ImageInfo>,
     pub local_queue: Vec<String>,
-    
+
     // Social / Open Graph
     pub og_title: Option<String>,
     pub og_description: Option<String>,
@@ -680,7 +728,12 @@ pub struct ParsedData {
     pub headings: Vec<HeadingEntry>,
 }
 
-pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &CrawlConfig) -> ParsedData {
+pub fn parse_html(
+    url_str: &str,
+    html_str: &str,
+    base_domain: &str,
+    config: &CrawlConfig,
+) -> ParsedData {
     let parsed_url = Url::parse(url_str).unwrap();
     let document = Html::parse_document(html_str);
 
@@ -705,17 +758,24 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
         .select(&canonical_sel)
         .next()
         .and_then(|el| el.attr("href"))
-        .map(|s| s.trim().to_string());
+        .and_then(|s| parsed_url.join(s.trim()).ok())
+        .map(|mut u| {
+            u.set_fragment(None);
+            u.to_string()
+        });
 
     // Check robots meta
     let mut noindex = false;
     let robots_sel = Selector::parse("meta[name=\"robots\" i]").unwrap();
-    if let Some(robots_el) = document.select(&robots_sel).next() {
-        if let Some(content) = robots_el.attr("content") {
-            let content_lower = content.to_lowercase();
-            if content_lower.contains("noindex") {
-                noindex = true;
-            }
+    if let Some(robots_el) = document.select(&robots_sel).next()
+        && let Some(content) = robots_el.attr("content")
+    {
+        let content_lower = content.to_lowercase();
+        if content_lower
+            .split([',', ' '])
+            .any(|v| v == "noindex" || v == "none")
+        {
+            noindex = true;
         }
     }
 
@@ -723,13 +783,17 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
     let h1_sel = Selector::parse("h1").unwrap();
     let h1_nodes: Vec<_> = document.select(&h1_sel).collect();
     let h1_count = h1_nodes.len();
-    let h1 = h1_nodes.first().map(|el| el.text().collect::<String>().trim().to_string());
+    let h1 = h1_nodes
+        .first()
+        .map(|el| el.text().collect::<String>().trim().to_string());
 
     // H2
     let h2_sel = Selector::parse("h2").unwrap();
     let h2_nodes: Vec<_> = document.select(&h2_sel).collect();
     let h2_count = h2_nodes.len();
-    let h2 = h2_nodes.first().map(|el| el.text().collect::<String>().trim().to_string());
+    let h2 = h2_nodes
+        .first()
+        .map(|el| el.text().collect::<String>().trim().to_string());
 
     // All headings H1–H6 in document order
     let all_headings_sel = Selector::parse("h1, h2, h3, h4, h5, h6").unwrap();
@@ -738,13 +802,19 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
         .filter_map(|el| {
             let tag = el.value().name();
             let level: u8 = match tag {
-                "h1" => 1, "h2" => 2, "h3" => 3,
-                "h4" => 4, "h5" => 5, "h6" => 6,
+                "h1" => 1,
+                "h2" => 2,
+                "h3" => 3,
+                "h4" => 4,
+                "h5" => 5,
+                "h6" => 6,
                 _ => return None,
             };
             let text = el.text().collect::<String>();
             let text = text.trim().to_string();
-            if text.is_empty() { return None; }
+            if text.is_empty() {
+                return None;
+            }
             Some(HeadingEntry { level, text })
         })
         .collect();
@@ -753,8 +823,17 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
     let mut word_count = 0;
     let body_sel = Selector::parse("body").unwrap();
     if let Some(body) = document.select(&body_sel).next() {
-        for text in body.text() {
-            word_count += text.split_whitespace().count();
+        for node in body.descendants() {
+            if let Some(text) = node.value().as_text() {
+                let hidden = node.ancestors().any(|ancestor| {
+                    ancestor.value().as_element().is_some_and(|el| {
+                        matches!(el.name(), "script" | "style" | "noscript" | "template")
+                    })
+                });
+                if !hidden {
+                    word_count += text.split_whitespace().count();
+                }
+            }
         }
     }
 
@@ -764,7 +843,10 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
     for img_el in document.select(&img_sel) {
         if let Some(src) = img_el.attr("src") {
             // Resolve relative src
-            let resolved_src = parsed_url.join(src).map(|u| u.to_string()).unwrap_or_else(|_| src.to_string());
+            let resolved_src = parsed_url
+                .join(src)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| src.to_string());
             images.push(ImageInfo {
                 src: resolved_src,
                 alt: img_el.attr("alt").map(|s| s.to_string()),
@@ -778,53 +860,92 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
     let mut local_queue = vec![];
     let link_sel = Selector::parse("a[href]").unwrap();
     for link_el in document.select(&link_sel) {
-        if let Some(href) = link_el.attr("href") {
-            if let Ok(resolved_url) = parsed_url.join(href) {
-                // Strip fragment
-                let mut clean_url = resolved_url.clone();
-                clean_url.set_fragment(None);
-                let clean_str = clean_url.to_string();
+        if let Some(href) = link_el.attr("href")
+            && let Ok(resolved_url) = parsed_url.join(href)
+        {
+            // Strip fragment
+            let mut clean_url = resolved_url.clone();
+            clean_url.set_fragment(None);
+            let clean_str = clean_url.to_string();
 
-                outlinks.push(clean_str.clone());
+            outlinks.push(clean_str.clone());
 
-                // Check if internal domain
-                if let Some(dom) = resolved_url.domain() {
-                    if dom == base_domain {
-                        local_queue.push(clean_str);
-                    }
-                }
+            // Check if internal domain
+            if !matches!(resolved_url.scheme(), "http" | "https") {
+                continue;
+            }
+            if let Some(dom) = resolved_url.host_str()
+                && dom == base_domain
+            {
+                local_queue.push(clean_str);
             }
         }
     }
 
     // Open Graph
     let og_title_sel = Selector::parse("meta[property=\"og:title\" i]").unwrap();
-    let og_title = document.select(&og_title_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
-    
+    let og_title = document
+        .select(&og_title_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
+
     let og_description_sel = Selector::parse("meta[property=\"og:description\" i]").unwrap();
-    let og_description = document.select(&og_description_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
-    
+    let og_description = document
+        .select(&og_description_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
+
     let og_image_sel = Selector::parse("meta[property=\"og:image\" i]").unwrap();
-    let og_image = document.select(&og_image_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let og_image = document
+        .select(&og_image_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     let og_url_sel = Selector::parse("meta[property=\"og:url\" i]").unwrap();
-    let og_url = document.select(&og_url_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let og_url = document
+        .select(&og_url_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     let og_type_sel = Selector::parse("meta[property=\"og:type\" i]").unwrap();
-    let og_type = document.select(&og_type_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let og_type = document
+        .select(&og_type_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     // Twitter Cards
     let twitter_title_sel = Selector::parse("meta[name=\"twitter:title\" i]").unwrap();
-    let twitter_title = document.select(&twitter_title_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let twitter_title = document
+        .select(&twitter_title_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     let twitter_description_sel = Selector::parse("meta[name=\"twitter:description\" i]").unwrap();
-    let twitter_description = document.select(&twitter_description_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let twitter_description = document
+        .select(&twitter_description_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     let twitter_image_sel = Selector::parse("meta[name=\"twitter:image\" i]").unwrap();
-    let twitter_image = document.select(&twitter_image_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let twitter_image = document
+        .select(&twitter_image_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     let twitter_card_sel = Selector::parse("meta[name=\"twitter:card\" i]").unwrap();
-    let twitter_card = document.select(&twitter_card_sel).next().and_then(|el| el.attr("content")).map(|s| s.trim().to_string());
+    let twitter_card = document
+        .select(&twitter_card_sel)
+        .next()
+        .and_then(|el| el.attr("content"))
+        .map(|s| s.trim().to_string());
 
     // JSON-LD Structured Data
     let schema_sel = Selector::parse("script[type=\"application/ld+json\"]").unwrap();
@@ -838,7 +959,7 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
             continue;
         }
         schema_json_ld.push(trimmed.to_string());
-        
+
         // Validate JSON-LD
         match serde_json::from_str::<serde_json::Value>(trimmed) {
             Ok(val) => {
@@ -847,7 +968,8 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
                 } else if val.is_object() {
                     vec![val]
                 } else {
-                    schema_errors.push("JSON-LD root must be an Object or Array of Objects.".to_string());
+                    schema_errors
+                        .push("JSON-LD root must be an Object or Array of Objects.".to_string());
                     continue;
                 };
 
@@ -862,10 +984,13 @@ pub fn parse_html(url_str: &str, html_str: &str, base_domain: &str, config: &Cra
 
                         if context.is_none() {
                             schema_errors.push("Missing '@context' property.".to_string());
-                        } else if let Some(ctx) = context {
-                            if !ctx.contains("schema.org") {
-                                schema_errors.push(format!("Non-standard @context: '{}'. Expected schema.org.", ctx));
-                            }
+                        } else if let Some(ctx) = context
+                            && !ctx.contains("schema.org")
+                        {
+                            schema_errors.push(format!(
+                                "Non-standard @context: '{}'. Expected schema.org.",
+                                ctx
+                            ));
                         }
 
                         // Only require @type when this is NOT an @graph container block.
@@ -925,58 +1050,71 @@ fn parse_microdata_items(document: &Html) -> Vec<String> {
         Ok(sel) => sel,
         Err(_) => return items,
     };
-    
+
     for el in document.select(&itemscope_sel) {
-        let is_top_level = el.ancestors()
+        let is_top_level = el
+            .ancestors()
             .filter_map(scraper::ElementRef::wrap)
             .all(|anc| anc.value().attr("itemscope").is_none());
-            
+
         if is_top_level {
             let val = parse_itemscope(el);
-            if !val.is_null() {
-                if let Ok(json_str) = serde_json::to_string_pretty(&val) {
-                    items.push(json_str);
-                }
+            if !val.is_null()
+                && let Ok(json_str) = serde_json::to_string_pretty(&val)
+            {
+                items.push(json_str);
             }
         }
     }
-    
+
     items
 }
 
 fn parse_itemscope(element: scraper::ElementRef) -> serde_json::Value {
     let mut map = serde_json::Map::new();
-    
-    map.insert("@context".to_string(), serde_json::Value::String("https://schema.org".to_string()));
-    
+
+    map.insert(
+        "@context".to_string(),
+        serde_json::Value::String("https://schema.org".to_string()),
+    );
+
     if let Some(itemtype) = element.value().attr("itemtype") {
         let clean_type = itemtype
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_start_matches("schema.org/");
-        map.insert("@type".to_string(), serde_json::Value::String(clean_type.to_string()));
+        map.insert(
+            "@type".to_string(),
+            serde_json::Value::String(clean_type.to_string()),
+        );
     } else {
-        map.insert("@type".to_string(), serde_json::Value::String("Thing".to_string()));
+        map.insert(
+            "@type".to_string(),
+            serde_json::Value::String("Thing".to_string()),
+        );
     }
-    
+
     parse_properties(element, &mut map);
-    
+
     serde_json::Value::Object(map)
 }
 
-fn parse_properties(element: scraper::ElementRef, map: &mut serde_json::Map<String, serde_json::Value>) {
+fn parse_properties(
+    element: scraper::ElementRef,
+    map: &mut serde_json::Map<String, serde_json::Value>,
+) {
     for child in element.children() {
         if let Some(child_el) = scraper::ElementRef::wrap(child) {
             if let Some(itemprop_attr) = child_el.value().attr("itemprop") {
                 let prop_name = itemprop_attr.to_string();
-                
+
                 let val = if child_el.value().attr("itemscope").is_some() {
                     parse_itemscope(child_el)
                 } else {
                     let text_val = get_microdata_value(child_el);
                     serde_json::Value::String(text_val)
                 };
-                
+
                 match map.get_mut(&prop_name) {
                     Some(serde_json::Value::Array(arr)) => {
                         arr.push(val);
@@ -989,7 +1127,7 @@ fn parse_properties(element: scraper::ElementRef, map: &mut serde_json::Map<Stri
                         map.insert(prop_name, val);
                     }
                 }
-                
+
                 if child_el.value().attr("itemscope").is_none() {
                     parse_properties(child_el, map);
                 }
@@ -1013,7 +1151,12 @@ fn get_microdata_value(element: scraper::ElementRef) -> String {
         "object" => element.value().attr("data").unwrap_or("").to_string(),
         "data" | "meter" => element.value().attr("value").unwrap_or("").to_string(),
         "time" => element.value().attr("datetime").unwrap_or("").to_string(),
-        _ => element.text().collect::<Vec<_>>().join(" ").trim().to_string(),
+        _ => element
+            .text()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string(),
     }
 }
 
@@ -1045,24 +1188,51 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
+        let parsed = parse_html(
+            "https://example.com/page",
+            html,
+            "example.com",
+            &CrawlConfig::default(),
+        );
 
         assert_eq!(parsed.title, Some("Test Page Title".to_string()));
-        assert_eq!(parsed.meta_desc, Some("This is a test meta description for SEO auditing.".to_string()));
-        assert_eq!(parsed.canonical, Some("https://example.com/canonical-url".to_string()));
-        assert_eq!(parsed.noindex, true);
+        assert_eq!(
+            parsed.meta_desc,
+            Some("This is a test meta description for SEO auditing.".to_string())
+        );
+        assert_eq!(
+            parsed.canonical,
+            Some("https://example.com/canonical-url".to_string())
+        );
+        assert!(parsed.noindex);
         assert_eq!(parsed.h1, Some("Main Heading".to_string()));
         assert_eq!(parsed.h1_count, 2);
         assert_eq!(parsed.h2, Some("Sub Heading".to_string()));
         assert_eq!(parsed.h2_count, 1);
-        
+
         // Assert links
-        assert!(parsed.outlinks.contains(&"https://example.com/about".to_string()));
-        assert!(parsed.outlinks.contains(&"https://external.com/contact".to_string()));
-        
+        assert!(
+            parsed
+                .outlinks
+                .contains(&"https://example.com/about".to_string())
+        );
+        assert!(
+            parsed
+                .outlinks
+                .contains(&"https://external.com/contact".to_string())
+        );
+
         // Assert local queue
-        assert!(parsed.local_queue.contains(&"https://example.com/about".to_string()));
-        assert!(!parsed.local_queue.contains(&"https://external.com/contact".to_string()));
+        assert!(
+            parsed
+                .local_queue
+                .contains(&"https://example.com/about".to_string())
+        );
+        assert!(
+            !parsed
+                .local_queue
+                .contains(&"https://external.com/contact".to_string())
+        );
 
         // Assert images
         assert_eq!(parsed.images.len(), 2);
@@ -1077,7 +1247,10 @@ mod tests {
         assert_eq!(clean_seed_url("google.com"), "https://google.com");
         assert_eq!(clean_seed_url("http://example.com"), "http://example.com");
         assert_eq!(clean_seed_url("https://example.com"), "https://example.com");
-        assert_eq!(clean_seed_url("   example.com/subpage   "), "https://example.com/subpage");
+        assert_eq!(
+            clean_seed_url("   example.com/subpage   "),
+            "https://example.com/subpage"
+        );
     }
 
     #[test]
@@ -1090,14 +1263,11 @@ mod tests {
             User-agent: Googlebot
             Disallow: /no-google/
         "#;
-        let rules = parse_robots_txt(robots, "Tadpole");
-        assert!(rules.contains(&"/admin".to_string()));
-        assert!(rules.contains(&"/private/".to_string()));
-        assert!(!rules.contains(&"/no-google/".to_string()));
-
-        assert!(is_disallowed("https://example.com/admin/settings", &rules));
-        assert!(is_disallowed("https://example.com/private/index.html", &rules));
-        assert!(!is_disallowed("https://example.com/blog", &rules));
+        let rules = crate::robots::parse(robots, "Tadpole");
+        assert!(!rules.allows("https://example.com/admin/settings"));
+        assert!(!rules.allows("https://example.com/private/index.html"));
+        assert!(rules.allows("https://example.com/no-google/"));
+        assert!(rules.allows("https://example.com/blog"));
     }
 
     #[test]
@@ -1123,22 +1293,39 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
+        let parsed = parse_html(
+            "https://example.com/page",
+            html,
+            "example.com",
+            &CrawlConfig::default(),
+        );
 
         assert_eq!(parsed.og_title, Some("Facebook OG Title".to_string()));
-        assert_eq!(parsed.og_description, Some("This is an OG description".to_string()));
-        assert_eq!(parsed.og_image, Some("https://example.com/share.jpg".to_string()));
+        assert_eq!(
+            parsed.og_description,
+            Some("This is an OG description".to_string())
+        );
+        assert_eq!(
+            parsed.og_image,
+            Some("https://example.com/share.jpg".to_string())
+        );
         assert_eq!(parsed.og_url, Some("https://example.com/page".to_string()));
         assert_eq!(parsed.og_type, Some("article".to_string()));
         assert_eq!(parsed.twitter_title, Some("Twitter Card Title".to_string()));
-        assert_eq!(parsed.twitter_description, Some("This is a Twitter description".to_string()));
-        assert_eq!(parsed.twitter_image, Some("https://example.com/twitter-share.jpg".to_string()));
+        assert_eq!(
+            parsed.twitter_description,
+            Some("This is a Twitter description".to_string())
+        );
+        assert_eq!(
+            parsed.twitter_image,
+            Some("https://example.com/twitter-share.jpg".to_string())
+        );
         assert_eq!(parsed.twitter_card, Some("summary_large_image".to_string()));
     }
 
     #[test]
     fn test_crawl_filter_social() {
-        use crate::ui::sidebar::CrawlFilter;
+        use crate::filters::CrawlFilter;
 
         let res_no_social = CrawlResult::new_failed(
             "https://example.com".to_string(),
@@ -1181,7 +1368,7 @@ mod tests {
                 </script>
                 <script type="application/ld+json">
                 {
-                    "invalid_json": 
+                    "invalid_json":
                 }
                 </script>
             </head>
@@ -1191,16 +1378,31 @@ mod tests {
             </html>
         "#;
 
-        let parsed = parse_html("https://example.com/page", html, "example.com", &CrawlConfig::default());
+        let parsed = parse_html(
+            "https://example.com/page",
+            html,
+            "example.com",
+            &CrawlConfig::default(),
+        );
 
         assert_eq!(parsed.schema_json_ld.len(), 3);
-        assert!(parsed.schema_errors.iter().any(|e| e.contains("Missing '@context' property")));
-        assert!(parsed.schema_errors.iter().any(|e| e.contains("JSON parsing error")));
+        assert!(
+            parsed
+                .schema_errors
+                .iter()
+                .any(|e| e.contains("Missing '@context' property"))
+        );
+        assert!(
+            parsed
+                .schema_errors
+                .iter()
+                .any(|e| e.contains("JSON parsing error"))
+        );
     }
 
     #[test]
     fn test_crawl_filter_schema() {
-        use crate::ui::sidebar::CrawlFilter;
+        use crate::filters::CrawlFilter;
 
         let mut res_no_schema = CrawlResult::new_failed(
             "https://example.com".to_string(),
@@ -1224,22 +1426,43 @@ mod tests {
 
     #[test]
     fn test_get_catalogue_url() {
-        assert_eq!(get_catalogue_url("https://example.com/foo/bar"), Some("https://example.com/foo/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com/foo/bar/"), Some("https://example.com/foo/bar/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com"), Some("https://example.com/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com/foo"), Some("https://example.com/foo/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com/foo?param=1#frag"), Some("https://example.com/foo/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com/index.html"), Some("https://example.com/".to_string()));
-        assert_eq!(get_catalogue_url("https://example.com/foo/index.html"), Some("https://example.com/foo/".to_string()));
+        assert_eq!(
+            get_catalogue_url("https://example.com/foo/bar"),
+            Some("https://example.com/foo/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com/foo/bar/"),
+            Some("https://example.com/foo/bar/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com"),
+            Some("https://example.com/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com/foo"),
+            Some("https://example.com/foo/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com/foo?param=1#frag"),
+            Some("https://example.com/foo/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com/index.html"),
+            Some("https://example.com/".to_string())
+        );
+        assert_eq!(
+            get_catalogue_url("https://example.com/foo/index.html"),
+            Some("https://example.com/foo/".to_string())
+        );
     }
 
     #[test]
     fn test_state_inlinks_accumulation() {
         let state = crate::state::CrawlState::new();
-        
+
         // 1. Add inlink for a page that has not been crawled/inserted yet
         state.add_inlink("https://example.com/target", "https://example.com/source-1");
-        
+
         // 2. Insert the result for the target page
         let target_res = crate::state::CrawlResult::new_failed(
             "https://example.com/target".to_string(),
@@ -1250,18 +1473,30 @@ mod tests {
             100,
         );
         state.insert_result(target_res);
-        
+
         // 3. Verify inlinks were merged during insertion
         let res_1 = state.get_result("https://example.com/target").unwrap();
-        assert!(res_1.inlinks.contains(&"https://example.com/source-1".to_string()));
-        
+        assert!(
+            res_1
+                .inlinks
+                .contains(&"https://example.com/source-1".to_string())
+        );
+
         // 4. Add another inlink now that the page exists in the state
         state.add_inlink("https://example.com/target", "https://example.com/source-2");
-        
+
         // 5. Verify it was appended immediately
         let res_2 = state.get_result("https://example.com/target").unwrap();
-        assert!(res_2.inlinks.contains(&"https://example.com/source-1".to_string()));
-        assert!(res_2.inlinks.contains(&"https://example.com/source-2".to_string()));
+        assert!(
+            res_2
+                .inlinks
+                .contains(&"https://example.com/source-1".to_string())
+        );
+        assert!(
+            res_2
+                .inlinks
+                .contains(&"https://example.com/source-2".to_string())
+        );
     }
 
     #[test]
@@ -1281,13 +1516,16 @@ mod tests {
             </html>
         "#;
 
-        let mut config = CrawlConfig::default();
-        config.extract_microdata = true;
+        let config = CrawlConfig {
+            extract_microdata: true,
+            ..Default::default()
+        };
 
         let parsed = parse_html("https://example.com/page", html, "example.com", &config);
 
         assert_eq!(parsed.schema_json_ld.len(), 1);
-        let parsed_json: serde_json::Value = serde_json::from_str(&parsed.schema_json_ld[0]).unwrap();
+        let parsed_json: serde_json::Value =
+            serde_json::from_str(&parsed.schema_json_ld[0]).unwrap();
         assert_eq!(parsed_json["@type"], "Product");
         assert_eq!(parsed_json["name"], "Dyson V8 Absolute");
         assert_eq!(parsed_json["offers"]["@type"], "Offer");

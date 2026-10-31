@@ -1,2 +1,9 @@
 /target
 .impeccable/
+/dist/
+/Tadpole.AppDir/
+/Tadpole-*.AppImage
+/appimagetool
+.env
+.env.*
+*.seocrawl

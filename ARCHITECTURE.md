@@ -1,94 +1,61 @@
-# Tadpole Architecture & Developer Guide
+# Tadpole architecture
 
-This document provides a comprehensive technical overview of Tadpole's codebase architecture, data model, multi-threading patterns, UI state management, and visualization engine for AI agents and human developers.
+The library owns crawling, audit data, provider integrations and graph algorithms. The desktop binary initializes Tokio and the Libadwaita application, then builds the UI from that library. `desktop` is the default Cargo feature; disabling it removes GTK, GDK, GLib, Gio, Libadwaita and Cairo dependencies from the core build.
 
----
+## Module map
 
-## 1. Project Overview & Tech Stack
+| Module | Responsibility |
+| --- | --- |
+| `src/main.rs` | Runtime/application startup and platform-specific loader setup |
+| `src/state.rs` | Shared `CrawlState`, results, config, counters and portable project format |
+| `src/crawler.rs` | HTTP scheduling, HTML extraction, optional browser rendering and resource discovery |
+| `src/robots.rs` | Robots groups, agent specificity and longest-match Allow/Disallow rules |
+| `src/http.rs` | Response allocation limits, independent of Content-Length |
+| `src/markdown.rs` | HTML-to-Markdown conversion and extraction settings |
+| `src/filters.rs` | GTK-independent audit filters and duplicate indexes |
+| `src/project.rs` | Atomic project writes and stable Markdown filenames |
+| `src/integrations.rs` | OpenRouter/OpenAI completions, DataForSEO SERP, response validation and editorial prompts |
+| `src/ui/window.rs` | Crawl workspace, preferences and GTK event handling |
+| `src/ui/table.rs`, `row_data.rs` | Virtualized results model, sorting, filtering, CSV/clipboard exports |
+| `src/ui/details.rs` | Selected-page diagnostics and metadata suggestions |
+| `src/ui/sidebar.rs`, `summary.rs` | Filters and local health/progress summaries |
+| `src/ui/link_opportunities.rs` | Cancellable background internal-link and n-gram analysis |
+| `src/ui/workbench.rs` | Separate SEO Studio window and explicit paid actions |
+| `src/ui/theme.rs` | Shared semantic Libadwaita styling |
+| `src/ui/site_visualizer.rs` | Native Cairo URL icicle UI |
+| `src/visualization/` | CSR graph snapshots, layouts, PageRank, sections, filtering and exports |
 
-- **Language**: Rust (Edition 2024)
-- **GUI Framework**: GTK4 (`gtk4` crate v0.11.3) + Libadwaita (`libadwaita` crate v0.9.1)
-- **Async Runtime**: `tokio` (v1.52.3)
-- **2D/3D Rendering Canvas**: `cairo-rs` (v0.22)
-- **HTML Parsing & Extraction**: `scraper` (v0.27.0) + `ego-tree`
-- **HTTP Client**: `reqwest` (v0.13.4, async with JSON support)
+## Crawl lifecycle
 
----
+1. The UI validates config and seed input, confirms replacement of existing results, resets state and marks the crawl active before spawning the crawler.
+2. The coordinator normalizes/deduplicates seeds and maintains a frontier. Discovery admission is bounded by `max_urls`; concurrency is clamped to 1–50.
+3. Every worker belongs to a Tokio `JoinSet`. Workers fetch/parse pages and discover links. The coordinator inserts completed results and emits `Crawled` events.
+4. Scheduling reserves capacity for in-flight pages, so the URL limit is strict. Pause suspends new work; already running requests finish.
+5. Stop aborts and drains owned workers. Only then does the coordinator clear active state and emit `Finished`. A completed old worker cannot insert results into a new crawl.
+6. GTK consumes events on its main context. Aggregate sidebar/dashboard work is limited to roughly four refreshes per second, with a final refresh when crawling ends.
 
-## 2. Codebase Directory Structure
+The discovery/event channels are unbounded channel types; the admitted URL count bounds the frontier. This avoids a bounded frontier deadlock where every HTTP worker waits to enqueue links while the coordinator waits for workers to finish. `CrawlState` uses `parking_lot::RwLock`; no guard may cross an `.await`.
 
-```
-Tadpole/
-├── src/
-│   ├── main.rs               # Application entrypoint & GTK Application initialization
-│   ├── crawler.rs            # Multi-threaded async Tokio crawler & HTTP fetcher
-│   ├── state.rs              # Shared CrawlState, CrawlResult, CrawlConfig, & issue tracking
-│   ├── parser.rs             # HTML parsing, Schema JSON-LD extraction, OG tags, Headings tree
-│   ├── markdown.rs           # Body text extraction & HTML-to-Markdown GFM converter
-│   ├── link_opportunities.rs# Internal link opportunity & N-gram density analyzer
-│   └── ui/
-│       ├── mod.rs            # UI module declaration
-│       ├── window.rs         # Main GTK window, HeaderBar, async file loader, ListStore streaming
-│       ├── sidebar.rs        # Filter sidebar & crawl config settings drawer
-│       ├── details.rs        # Bottom details notebook (SEO info, Social, Schema, Headings, Markdown)
-│       ├── table.rs          # GTK ColumnView / ListStore for live crawl grid
-│       ├── summary.rs        # SEO Health Score dashboard & depth distribution chart
-│       ├── row_data.rs       # GObject wrapper (CrawlRowData) for GTK ListStore binding
-│       └── site_visualizer.rs# Standalone 2D/3D Site Visualizer window (Directory Tree & TensorFlow 3D Projector)
-├── snap/                     # Snapcraft configuration & snapcraft.yaml
-├── .github/workflows/        # CI/CD pipelines (release.yml for AppImage, DEB, RPM, Snap, EXE)
-└── Cargo.toml                # Dependencies & package metadata
-```
+## UI cost model
 
----
+`ColumnView` virtualizes rows. `CrawlRowData` owns an `Rc<CrawlResult>` so sorting, filtering and cell binding do not clone full Markdown/images/link vectors. A `DuplicateIndex` supports constant-time duplicate checks per row; sidebar/dashboard rebuild their index once per refresh. Text searches are case-insensitive. GTK widgets stay on the main thread; project serialization and Markdown file writes use background work. Loading saved rows yields through a GLib timeout, rather than a Tokio yield which does not guarantee time for GTK to paint.
 
-## 3. Data Flow & Multi-Threading Model
+## Project compatibility and secrets
 
-```
- ┌────────────────┐     mpsc channel      ┌─────────────────┐
- │ Tokio Crawler  ├──────────────────────►│ GTK Main Loop   │
- │ (crawler.rs)   │  CrawlUpdate events   │ (glib::idle_add)│
- └───────┬────────┘                       └────────┬────────┘
-         │                                         │
-         ▼                                         ▼
- ┌────────────────┐                       ┌─────────────────┐
- │   CrawlState   │                       │  gio::ListStore │
- │ (parking_lot)  │◄──────────────────────┤ (gtk::ColumnView│
- └────────────────┘   Thread-safe read    └─────────────────┘
-```
+`.seocrawl` remains JSON with `seed_url`, `config`, `results`, and `stats`. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
 
-1. **Crawler Execution**: The Tokio crawler (`crawler.rs`) runs asynchronously in background tasks, spawning workers bounded by `CrawlConfig::max_concurrent`.
-2. **State Mutability**: Results are inserted into `CrawlState` wrapped in `Arc<RwLock<CrawlState>>` (using `parking_lot::RwLock`).
-3. **UI Streaming**: Live updates travel to the GTK UI thread via `tokio::sync::mpsc::unbounded_channel()`. The main window receives updates using `glib::idle_add_local` or Tokio async handlers, pushing batched chunks into `gio::ListStore` with `tokio::task::yield_now().await` to prevent UI freezing.
+Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` implementation. Old embedded keys are ignored when loading. They still exist in old files on disk until the owner removes them. Atomic saves write/sync a private temporary file beside the destination and replace it only after successful serialization. A compact format reduces file size without changing the schema.
 
----
+## External providers
 
-## 4. Visualizer Architecture (`site_visualizer.rs`)
+The integration module has no GTK dependency. The UI supplies session config and an explicit topic/prompt; the module owns provider-specific URLs, bounded HTTP requests, status validation and response interpretation. It never crawls competitor URLs returned by SERP.
 
-The **Visual Site Map** is rendered inside a standalone `gtk::Window` (`VisualizerWindow`) containing a `gtk::DrawingArea` with a Cairo 2D/3D render func.
+- Completions: 90-second total timeout, 10-second connect timeout, 2 MiB response limit, 30k-character prompt limit and 2,500 output tokens. HTTP bodies are omitted from errors to avoid echoing secrets/context. Empty, failed and truncated completions are rejected.
+- DataForSEO: one Google Organic Live Advanced task, depth 10, Basic Auth, both envelope and task status must equal 20000. Organic items and task cost are extracted; missing results are errors.
+- Studio: keyword/market changes invalidate cached evidence; active requests lock those inputs. Report state is per window and is not stored in crawl projects. Requests require explicit buttons and do not automatically retry.
 
-### Modes
-1. **DirectoryTree (Recursive N-Level Tree)**:
-   - Parses URLs into a recursive `DirectoryTreeNode` hierarchy.
-   - Calculates horizontal column $X = \text{depth} \times 240.0$.
-   - Draws organic tree branch connectors using Cairo cubic Bezier curves (`cr.curve_to`).
-   - Supports interactive folder branch expansion/collapsing (`expanded_folders: HashSet<String>`).
-2. **ThreeDConstellation (TensorFlow 3D Embedding Projector)**:
-   - Projects 3D spatial coordinates $(X, Y, Z)$ to 2D screen coordinates using a 3D perspective camera matrix:
-     $$x_{screen} = \frac{f \cdot x'}{z' + d} + \text{center}_x, \quad y_{screen} = \frac{f \cdot y'}{z' + d} + \text{center}_y$$
-   - Supports 3D camera orbit rotation (mouse drag adjusts `yaw` and `pitch` angles) and dolly zoom (mouse scroll).
-   - Applies Painter's Algorithm ($Z$-sorting back-to-front) and depth attenuation fog.
+## Visualization truth
 
-### Smart Level-of-Detail (LOD) Label Culling
-To maintain 60+ FPS performance and crystal-clear legibility:
-- **Major Hubs**: Only primary directory folders ($>3\%$ of total site pages) display text labels by default in `SmartAuto` mode.
-- **3D Camera Proximity**: In 3D mode, text labels are rendered only for nodes positioned in the front camera plane (`proj_scale > 0.82`).
-- **Hover & Selection**: Hovering over or clicking any node forces its text label to render immediately.
+The shipped UI is a Cairo icicle view. Compact graph algorithms and JSON message types exist, but there is no embedded Sigma.js/D3/WebGL renderer. `CairoCanvasRenderer` is an interface placeholder; actual drawing happens in `site_visualizer.rs`. The older implementation plan and protocol are design references, not a list of shipped capabilities. Layout caches are cleared on snapshot replacement; equal node/edge counts do not identify equal topology.
 
----
-
-## 5. Non-Blocking File Opening Pattern
-
-When opening saved `.seocrawl` JSON project files in `window.rs`:
-- JSON deserialization executes off the main thread via `tokio::task::spawn_blocking`.
-- UI updates are streamed into `gio::ListStore` in small batches (50 rows at a time) with `tokio::task::yield_now().await`, giving GTK time to process events and render UI frames smoothly without triggering OS "Not Responding" alerts.
+See [development](docs/DEVELOPMENT.md) for operational limits and [audit](docs/AUDIT.md) for findings and remaining work.

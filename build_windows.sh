@@ -25,7 +25,7 @@ fi
 echo "=== Building Tadpole in Release mode ==="
 # Ensure compile env variables are set
 export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-cargo build --release
+cargo build --release --locked
 
 echo "=== Creating distribution package ==="
 DIST_DIR="dist/tadpole-windows"

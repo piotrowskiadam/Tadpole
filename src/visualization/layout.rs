@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::snapshot::*;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LayoutType {
@@ -22,7 +22,11 @@ pub struct LayoutResult {
     pub positions: Vec<NodePosition>,
 }
 
-pub fn compute_layout(snapshot: &GraphSnapshot, layout_type: LayoutType, seed: u64) -> LayoutResult {
+pub fn compute_layout(
+    snapshot: &GraphSnapshot,
+    layout_type: LayoutType,
+    seed: u64,
+) -> LayoutResult {
     let positions = match layout_type {
         LayoutType::ForceAtlas2 => compute_force_atlas_2(snapshot, seed),
         LayoutType::RadialDepth => compute_radial_depth(snapshot),
@@ -137,7 +141,10 @@ fn compute_force_atlas_2(snapshot: &GraphSnapshot, seed: u64) -> Vec<NodePositio
 fn compute_radial_depth(snapshot: &GraphSnapshot) -> Vec<NodePosition> {
     let mut depth_groups: HashMap<u16, Vec<NodeId>> = HashMap::new();
     for node in snapshot.nodes.iter() {
-        depth_groups.entry(node.crawl_depth).or_default().push(node.id);
+        depth_groups
+            .entry(node.crawl_depth)
+            .or_default()
+            .push(node.id);
     }
 
     let mut result = Vec::with_capacity(snapshot.nodes.len());
@@ -178,7 +185,10 @@ fn compute_section_first(snapshot: &GraphSnapshot, seed: u64) -> Vec<NodePositio
 
     let mut rng_state = seed;
     for node in snapshot.nodes.iter() {
-        let (cx, cy) = section_centers.get(&node.section_id).cloned().unwrap_or((0.0, 0.0));
+        let (cx, cy) = section_centers
+            .get(&node.section_id)
+            .cloned()
+            .unwrap_or((0.0, 0.0));
         let count = section_node_counts.entry(node.section_id).or_insert(0);
         *count += 1;
 
@@ -203,7 +213,10 @@ fn compute_section_first(snapshot: &GraphSnapshot, seed: u64) -> Vec<NodePositio
 fn compute_hierarchical(snapshot: &GraphSnapshot) -> Vec<NodePosition> {
     let mut depth_groups: HashMap<u16, Vec<NodeId>> = HashMap::new();
     for node in snapshot.nodes.iter() {
-        depth_groups.entry(node.crawl_depth).or_default().push(node.id);
+        depth_groups
+            .entry(node.crawl_depth)
+            .or_default()
+            .push(node.id);
     }
 
     let mut result = Vec::with_capacity(snapshot.nodes.len());
