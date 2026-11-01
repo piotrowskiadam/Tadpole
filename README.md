@@ -19,6 +19,10 @@ A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a websit
 
 SEO health is a local heuristic, not a Google score. Schema diagnostics check syntax and selected fields; they do not certify rich-result eligibility. A crawl cannot discover truly orphaned pages that have no links from the seed; provide those URLs in List mode.
 
+## Visualization design study
+
+[View the native-style HTML/SVG concepts](docs/visualization/index.html), [design and loading plan](docs/visualization/design.md), and [first-party SEO tool research](docs/research/seo-visualizations.md). These are proposals for directory, link-depth, URL-neighborhood, section-matrix and depth/rank views. The [release CPU baseline](VISUALIZATION_BENCHMARKS.md) identifies current loading costs; proposed views and performance targets are not shipped behavior.
+
 ## Optional AI metadata suggestions
 
 In **Preferences → AI Assistant**, choose OpenRouter or OpenAI, enter your API key and select a model (or enter a custom model ID). The selected page's details offer title, description and image alt-text suggestions based on crawled page content.

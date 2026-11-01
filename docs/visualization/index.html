@@ -1,0 +1,346 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Tadpole · Visualization design study</title><style>
+*{box-sizing:border-box}html{scroll-behavior:auto;color-scheme:light dark}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55}
+:root{--paper:#fafafa;--paper2:#ededed;--ink:#2e3436;--muted:#5e5c64;--soft:#5e5c64;--edge:#77767b;--rule:#d5d3d7;--accent:#1c71d8;--tint:#dfebf8;--sans:'Adwaita Sans',Cantarell,'Noto Sans',system-ui,sans-serif;--mono:'Noto Sans Mono',ui-monospace,monospace}
+@media(prefers-color-scheme:dark){:root{--paper:#242424;--paper2:#303030;--ink:#f6f5f4;--muted:#c0bfbc;--soft:#c0bfbc;--edge:#9a9996;--rule:#4c4c4c;--accent:#78aeed;--tint:#2e3540}}
+main{max-width:1120px;margin:auto;padding:40px 24px 56px;min-width:0}header{border-bottom:1px solid var(--rule);padding-bottom:24px}h1{font-size:32px;line-height:1.2;letter-spacing:-.025em;margin:8px 0 16px;font-weight:700}h2{font-size:24px;line-height:1.3;margin:0 0 12px}p{max-width:80ch;margin:0 0 16px}a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:3px}a:focus-visible,.diagram-container:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.eyebrow{font-size:14px;font-weight:600;color:var(--muted)}nav{display:flex;flex-wrap:wrap;gap:12px 24px;padding-top:8px}nav a{font-size:14px}.notice{border-left:3px solid var(--accent);padding:4px 0 4px 16px;margin:24px 0;color:var(--muted)}section{padding:40px 0;border-bottom:1px solid var(--rule)}.question{color:var(--muted);margin-bottom:24px}figure{margin:0}.diagram-container{width:100%;overflow-x:auto}svg{display:block;width:100%;min-width:960px;fill:var(--ink);font:14px var(--sans)}figcaption{margin-top:16px;max-width:88ch;color:var(--muted);font-size:14px}dl{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:24px;margin:24px 0 0}dt{font-weight:600;font-size:14px;margin-bottom:4px}dd{margin:0;font-size:14px;color:var(--muted)}.paper{fill:var(--paper)}.muted{fill:var(--muted)}.figure-title{font-size:24px;font-weight:650}.node{fill:var(--paper2);stroke:var(--edge);stroke-width:1}.node-name{font-size:14px;font-weight:600}.url{font:12px var(--mono)}.focal{fill:var(--tint);stroke:var(--accent);stroke-width:2}.edge{fill:none;stroke:var(--edge);stroke-width:1.2}.arrow-head{fill:var(--edge)}.dashed{stroke-dasharray:4 4}.rule,.grid{stroke:var(--rule);stroke-width:1}.legend{font-size:12px}.cell{stroke:var(--edge);stroke-width:1}.cell.focal{fill:var(--tint);stroke:var(--accent);stroke-width:2}.point{fill:var(--paper2);stroke:var(--muted);stroke-width:1.5}.point.focal{fill:var(--accent);stroke:var(--accent)}.queue-slot{fill:var(--paper);stroke:var(--edge);stroke-width:1}footer{padding-top:24px;color:var(--muted);font-size:14px}code{font:13px var(--mono);overflow-wrap:anywhere}
+@media(max-width:700px){main{padding:24px 16px}h1{font-size:28px}dl{grid-template-columns:1fr;gap:16px}section{padding:32px 0}}
+@media print{body{background:white;color:black}main{padding:0;max-width:none}.diagram-container{overflow-x:visible}svg{min-width:0}figure{break-inside:avoid}section{break-before:page}nav{display:none}a{color:inherit}h1{font-size:28px}}
+</style></head><body><main><header><div class="eyebrow">Tadpole · Design study · 01 November 2026</div><h1>Understand the site, one question at a time.</h1><p>Five complementary views for a native SEO crawler, with a shared selection and a loading model designed for larger crawls. Palette, typography and density follow Tadpole’s GTK / Libadwaita conventions.</p><nav aria-label="Design concepts"><a href="#directory">Directory area</a><a href="#paths">Link depth</a><a href="#links">URL links</a><a href="#sections">Section links</a><a href="#depth-rank">Depth + rank</a><a href="#loading">Loading model</a></nav></header><p class="notice">Design proposals, pending review. The diagrams use synthetic examples and static annotations; they are not running application screens. Display limits and latency budgets are provisional. System light/dark appearance is supported without downloaded fonts, scripts or assets.</p>
+<section id="directory"><h2>01 · Directory area</h2><p class="question">Find large sections, then switch the weight to bytes or pages with issues.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="Directory area diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="directory-title directory-desc">
+<title id="directory-title">Directory area</title><desc id="directory-desc">A treemap of 120 example URLs shows Blog with 36, Products with 30 selected, Help with 24, Other with 18 and Archive with 12.</desc>
+<defs><marker id="directory-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">Where are the URLs concentrated?</text>
+<text x="48" y="80" class="muted" text-anchor="start">Directory area · 120 crawled URLs · weight: URL count · example data</text>
+<rect x="48" y="128" width="256" height="348" class="cell" rx="0" data-name="Blog" data-value="36" style="fill:var(--ink);fill-opacity:0.14"/>
+<text x="64" y="156" class="node-name" text-anchor="start">Blog</text>
+<text x="64" y="180" class="muted" text-anchor="start">36 URLs · 30%</text>
+<text x="64" y="208" class="url muted" text-anchor="start">/blog/</text>
+<rect x="308" y="128" width="212" height="348" class="cell focal" rx="0" data-name="Products" data-value="30" style=""/>
+<text x="324" y="156" class="node-name" text-anchor="start">Products</text>
+<text x="324" y="180" class="muted" text-anchor="start">30 URLs · 25%</text>
+<text x="324" y="208" class="url muted" text-anchor="start">/products/</text>
+<rect x="524" y="128" width="296" height="196" class="cell" rx="0" data-name="Help" data-value="24" style="fill:var(--ink);fill-opacity:0.10"/>
+<text x="540" y="156" class="node-name" text-anchor="start">Help</text>
+<text x="540" y="180" class="muted" text-anchor="start">24 URLs · 20%</text>
+<text x="540" y="208" class="url muted" text-anchor="start">/help/</text>
+<rect x="524" y="328" width="296" height="148" class="cell" rx="0" data-name="Other" data-value="18" style="fill:var(--ink);fill-opacity:0.08"/>
+<text x="540" y="356" class="node-name" text-anchor="start">Other</text>
+<text x="540" y="380" class="muted" text-anchor="start">18 URLs · 15%</text>
+<rect x="824" y="128" width="84" height="348" class="cell" rx="0" data-name="Archive" data-value="12" style="fill:var(--ink);fill-opacity:0.06"/>
+<text x="840" y="156" class="node-name" text-anchor="start">Archive</text>
+<text x="840" y="180" class="muted" text-anchor="start">12 URLs · 10%</text>
+<text x="840" y="208" class="url muted" text-anchor="start">/archive/</text>
+<text x="48" y="516" class="muted" text-anchor="start">Other = /about/ (8), /category/ (6), and root-level URLs (4).</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">AREA = URL COUNT · Products is selected; stronger neutral tint indicates larger groups.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">All 120 URLs represented. Areas rounded to a 4 px grid; maximum relative share error &lt; 3.5%.</text>
+</svg>
+</div><figcaption>An alternative to the existing icicle view. Area communicates section size; selection supplies exact counts. The default weight is URL count. “Pages with issues” counts pages once, regardless of how many issues each page has.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>URL containment within an origin; area is a chosen additive measure.</dd></div><div><dt>On selection</dt><dd>Open the folder, inspect its URL table, or apply the same selection to another view.</dd></div><div><dt>Loading strategy</dt><dd>Build the directory index once per snapshot. Cache rectangles by metric, focus and viewport; collapse the small tail into a named Other group.</dd></div></dl></section>
+<section id="paths"><h2>02 · Link-depth tree</h2><p class="question">Find pages that take too many links to reach from the start URL.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="Link-depth tree diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="paths-title paths-desc">
+<title id="paths-title">Link-depth tree</title><desc id="paths-desc">A shortest-path tree reaches Widget through Products and Category in three links, while a Blog guide is reached through Help rather than its URL folder.</desc>
+<defs><marker id="paths-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">How many links away is a page?</text>
+<text x="48" y="80" class="muted" text-anchor="start">Shortest-path tree from https://example.test/ · 8 example pages</text>
+<text x="48" y="154" class="muted" text-anchor="start">0 links</text>
+<text x="48" y="266" class="muted" text-anchor="start">1</text>
+<text x="48" y="378" class="muted" text-anchor="start">2</text>
+<text x="48" y="490" class="muted" text-anchor="start">3</text>
+<path d="M 448 160 V 180 Q 448 188 440 188 H 200 Q 192 188 192 196 V 216" class="edge"/>
+<line x1="480" y1="160" x2="480" y2="216" class="edge"/>
+<path d="M 512 160 V 172 Q 512 180 520 180 H 760 Q 768 180 768 188 V 216" class="edge"/>
+<line x1="192" y1="272" x2="192" y2="328" class="edge"/>
+<line x1="480" y1="272" x2="480" y2="328" class="edge"/>
+<line x1="768" y1="272" x2="768" y2="328" class="edge"/>
+<line x1="480" y1="384" x2="480" y2="440" class="edge"/>
+<rect x="392" y="104" width="176" height="56" class="node" rx="6"/>
+<text x="480.0" y="127.0" class="node-name" text-anchor="middle">Home</text>
+<text x="480.0" y="147.0" class="url muted" text-anchor="middle">/</text>
+<rect x="104" y="216" width="176" height="56" class="node" rx="6"/>
+<text x="192.0" y="239.0" class="node-name" text-anchor="middle">Blog</text>
+<text x="192.0" y="259.0" class="url muted" text-anchor="middle">/blog/</text>
+<rect x="392" y="216" width="176" height="56" class="node" rx="6"/>
+<text x="480.0" y="239.0" class="node-name" text-anchor="middle">Products</text>
+<text x="480.0" y="259.0" class="url muted" text-anchor="middle">/products/</text>
+<rect x="680" y="216" width="176" height="56" class="node" rx="6"/>
+<text x="768.0" y="239.0" class="node-name" text-anchor="middle">Help</text>
+<text x="768.0" y="259.0" class="url muted" text-anchor="middle">/help/</text>
+<rect x="104" y="328" width="176" height="56" class="node" rx="6"/>
+<text x="192.0" y="351.0" class="node-name" text-anchor="middle">Article</text>
+<text x="192.0" y="371.0" class="url muted" text-anchor="middle">/blog/article</text>
+<rect x="392" y="328" width="176" height="56" class="node" rx="6"/>
+<text x="480.0" y="351.0" class="node-name" text-anchor="middle">Category</text>
+<text x="480.0" y="371.0" class="url muted" text-anchor="middle">/products/category</text>
+<rect x="680" y="328" width="176" height="56" class="node" rx="6"/>
+<text x="768.0" y="351.0" class="node-name" text-anchor="middle">Guide</text>
+<text x="768.0" y="371.0" class="url muted" text-anchor="middle">/blog/guide</text>
+<rect x="392" y="440" width="176" height="56" class="node focal" rx="6"/>
+<text x="480.0" y="463.0" class="node-name" text-anchor="middle">Widget</text>
+<text x="480.0" y="483.0" class="url muted" text-anchor="middle">/products/widget</text>
+<text x="632" y="468" class="muted" text-anchor="start">Guide is in /blog/,</text>
+<text x="632" y="492" class="muted" text-anchor="start">but reached via /help/.</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">EDGE = ONE SHORTEST-PATH PARENT · Widget is selected; cross-links are omitted.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">A reconstructed BFS tree, not a record of discovery order. Pages outside the reachable component need a separate list.</text>
+</svg>
+</div><figcaption>Keep this separate from URL containment. The current snapshot has depths and links, but no saved discovery parent. Build a deterministic shortest-path tree from a known start URL; label it accordingly. Selecting a different start explicitly changes this analysis.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>One shortest-path parent per reachable URL. It does not display every internal link.</dd></div><div><dt>On selection</dt><dd>Reveal the complete path, expand children, and open the actual incoming-link evidence.</dd></div><div><dt>Loading strategy</dt><dd>Compute BFS once per start URL. Begin with three visible levels; retain collapsed counts and focus one branch. Keep unreachable and unknown-start states explicit.</dd></div></dl></section>
+<section id="links"><h2>03 · URL link neighborhood</h2><p class="question">Inspect the links that can explain one page’s position or a broken destination.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="URL link neighborhood diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="links-title links-desc">
+<title id="links-title">URL link neighborhood</title><desc id="links-desc">Three example incoming pages point to the selected Widget, which links to Specifications, Delivery and a known 404 comparison page; remaining links are counted but hidden.</desc>
+<defs><marker id="links-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">What links to this URL, and where does it link?</text>
+<text x="48" y="80" class="muted" text-anchor="start">Actual crawled links · selected: /products/widget · example data</text>
+<text x="144" y="116" class="muted" text-anchor="middle">Incoming: 3 of 42 shown</text>
+<text x="816" y="116" class="muted" text-anchor="middle">Outgoing: 3 of 18 shown</text>
+<path d="M 232 172 H 304 Q 312 172 312 180 V 264 Q 312 272 320 272 H 392" class="edge" marker-end="url(#links-arrow)"/>
+<path d="M 232 288 H 392" class="edge" marker-end="url(#links-arrow)"/>
+<path d="M 232 404 H 336 Q 344 404 344 396 V 312 Q 344 304 352 304 H 392" class="edge" marker-end="url(#links-arrow)"/>
+<path d="M 568 272 H 624 Q 632 272 632 264 V 180 Q 632 172 640 172 H 728" class="edge" marker-end="url(#links-arrow)"/>
+<path d="M 568 288 H 728" class="edge" marker-end="url(#links-arrow)"/>
+<path d="M 568 304 H 592 Q 600 304 600 312 V 396 Q 600 404 600 404 H 728" class="edge" marker-end="url(#links-arrow)"/>
+<rect x="56" y="144" width="176" height="56" class="node" rx="6"/>
+<text x="144.0" y="167.0" class="node-name" text-anchor="middle">Home</text>
+<text x="144.0" y="187.0" class="url muted" text-anchor="middle">/</text>
+<rect x="56" y="260" width="176" height="56" class="node" rx="6"/>
+<text x="144.0" y="283.0" class="node-name" text-anchor="middle">Buying guide</text>
+<text x="144.0" y="303.0" class="url muted" text-anchor="middle">/blog/guide</text>
+<rect x="56" y="376" width="176" height="56" class="node" rx="6"/>
+<text x="144.0" y="399.0" class="node-name" text-anchor="middle">Category</text>
+<text x="144.0" y="419.0" class="url muted" text-anchor="middle">/products/category</text>
+<rect x="392" y="260" width="176" height="56" class="node focal" rx="6"/>
+<text x="480.0" y="283.0" class="node-name" text-anchor="middle">Widget</text>
+<text x="480.0" y="303.0" class="url muted" text-anchor="middle">/products/widget</text>
+<rect x="728" y="144" width="176" height="56" class="node" rx="6"/>
+<text x="816.0" y="167.0" class="node-name" text-anchor="middle">Specifications</text>
+<text x="816.0" y="187.0" class="url muted" text-anchor="middle">/products/specs</text>
+<rect x="728" y="260" width="176" height="56" class="node" rx="6"/>
+<text x="816.0" y="283.0" class="node-name" text-anchor="middle">Delivery</text>
+<text x="816.0" y="303.0" class="url muted" text-anchor="middle">/help/delivery</text>
+<rect x="728" y="376" width="176" height="56" class="node dashed" rx="6"/>
+<text x="816.0" y="399.0" class="node-name" text-anchor="middle">Old comparison</text>
+<text x="816.0" y="419.0" class="url muted" text-anchor="middle">/compare-old · 404</text>
+<text x="48" y="496" class="muted" text-anchor="start">39 incoming and 15 outgoing relationships remain in the linked evidence tables.</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">ARROW = A UNIQUE SOURCE → TARGET PAIR · Dashed box = known HTTP 404 target.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">Counts cover the crawl, not the entire website. “No incoming links” alone does not prove that a URL is an orphan.</text>
+</svg>
+</div><figcaption>This view uses real many-to-many edges. Keep incoming and outgoing groups readable and stable. The source and target table remains the complete evidence; the diagram is a bounded selection.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>Unique URL pairs, with arrows indicating direction. Repeated link occurrences are a separate metric.</dd></div><div><dt>On selection</dt><dd>Inspect source/target rows, focus a neighbor or expand one group. Preserve the selected URL across modes.</dd></div><div><dt>Loading strategy</dt><dd>Start with one hop. Proposed initial cap: 250 nodes / 500 edges, with shown/total counts and explicit expansion. No global force layout during opening.</dd></div></dl></section>
+<section id="sections"><h2>04 · Section link matrix</h2><p class="question">Compare connections between sections without laying out every URL.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="Section link matrix diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="sections-title sections-desc">
+<title id="sections-title">Section link matrix</title><desc id="sections-desc">A five by five matrix of unique link pairs highlights only two links from Blog to Products against sixty within Blog, with all source and target groups shown.</desc>
+<defs><marker id="sections-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">Does the blog connect to the product section?</text>
+<text x="48" y="80" class="muted" text-anchor="start">Unique crawled source → target URL pairs · all five example groups</text>
+<text x="48" y="116" class="muted" text-anchor="start" font-size="12">SOURCE ↓ / TARGET →</text>
+<text x="240" y="140" class="node-name" text-anchor="middle">Blog</text>
+<text x="360" y="140" class="node-name" text-anchor="middle">Products</text>
+<text x="480" y="140" class="node-name" text-anchor="middle">Help</text>
+<text x="600" y="140" class="node-name" text-anchor="middle">Archive</text>
+<text x="720" y="140" class="node-name" text-anchor="middle">Other</text>
+<text x="164" y="184" class="node-name" text-anchor="end">Blog</text>
+<rect x="184" y="156" width="112" height="56" class="paper" />
+<rect x="184" y="156" width="112" height="56" class="cell" data-row="Blog" data-col="Blog" data-value="60" style="fill:var(--ink);fill-opacity:0.14333"/>
+<text x="240" y="190" class="node-name" text-anchor="middle">60</text>
+<rect x="304" y="156" width="112" height="56" class="paper" />
+<rect x="304" y="156" width="112" height="56" class="cell focal" data-row="Blog" data-col="Products" data-value="2" data-focal="true"/>
+<text x="360" y="190" class="node-name" text-anchor="middle">2</text>
+<rect x="424" y="156" width="112" height="56" class="paper" />
+<rect x="424" y="156" width="112" height="56" class="cell" data-row="Blog" data-col="Help" data-value="8" style="fill:var(--ink);fill-opacity:0.07111"/>
+<text x="480" y="190" class="node-name" text-anchor="middle">8</text>
+<rect x="544" y="156" width="112" height="56" class="paper" />
+<rect x="544" y="156" width="112" height="56" class="cell" data-row="Blog" data-col="Archive" data-value="4" style="fill:var(--ink);fill-opacity:0.06556"/>
+<text x="600" y="190" class="node-name" text-anchor="middle">4</text>
+<rect x="664" y="156" width="112" height="56" class="paper" />
+<rect x="664" y="156" width="112" height="56" class="cell" data-row="Blog" data-col="Other" data-value="6" style="fill:var(--ink);fill-opacity:0.06833"/>
+<text x="720" y="190" class="node-name" text-anchor="middle">6</text>
+<text x="164" y="248" class="node-name" text-anchor="end">Products</text>
+<rect x="184" y="220" width="112" height="56" class="paper" />
+<rect x="184" y="220" width="112" height="56" class="cell" data-row="Products" data-col="Blog" data-value="8" style="fill:var(--ink);fill-opacity:0.07111"/>
+<text x="240" y="254" class="node-name" text-anchor="middle">8</text>
+<rect x="304" y="220" width="112" height="56" class="paper" />
+<rect x="304" y="220" width="112" height="56" class="cell" data-row="Products" data-col="Products" data-value="72" style="fill:var(--ink);fill-opacity:0.16000"/>
+<text x="360" y="254" class="node-name" text-anchor="middle">72</text>
+<rect x="424" y="220" width="112" height="56" class="paper" />
+<rect x="424" y="220" width="112" height="56" class="cell" data-row="Products" data-col="Help" data-value="10" style="fill:var(--ink);fill-opacity:0.07389"/>
+<text x="480" y="254" class="node-name" text-anchor="middle">10</text>
+<rect x="544" y="220" width="112" height="56" class="paper" />
+<rect x="544" y="220" width="112" height="56" class="cell" data-row="Products" data-col="Archive" data-value="2" style="fill:var(--ink);fill-opacity:0.06278"/>
+<text x="600" y="254" class="node-name" text-anchor="middle">2</text>
+<rect x="664" y="220" width="112" height="56" class="paper" />
+<rect x="664" y="220" width="112" height="56" class="cell" data-row="Products" data-col="Other" data-value="6" style="fill:var(--ink);fill-opacity:0.06833"/>
+<text x="720" y="254" class="node-name" text-anchor="middle">6</text>
+<text x="164" y="312" class="node-name" text-anchor="end">Help</text>
+<rect x="184" y="284" width="112" height="56" class="paper" />
+<rect x="184" y="284" width="112" height="56" class="cell" data-row="Help" data-col="Blog" data-value="4" style="fill:var(--ink);fill-opacity:0.06556"/>
+<text x="240" y="318" class="node-name" text-anchor="middle">4</text>
+<rect x="304" y="284" width="112" height="56" class="paper" />
+<rect x="304" y="284" width="112" height="56" class="cell" data-row="Help" data-col="Products" data-value="4" style="fill:var(--ink);fill-opacity:0.06556"/>
+<text x="360" y="318" class="node-name" text-anchor="middle">4</text>
+<rect x="424" y="284" width="112" height="56" class="paper" />
+<rect x="424" y="284" width="112" height="56" class="cell" data-row="Help" data-col="Help" data-value="48" style="fill:var(--ink);fill-opacity:0.12667"/>
+<text x="480" y="318" class="node-name" text-anchor="middle">48</text>
+<rect x="544" y="284" width="112" height="56" class="paper" />
+<rect x="544" y="284" width="112" height="56" class="cell" data-row="Help" data-col="Archive" data-value="2" style="fill:var(--ink);fill-opacity:0.06278"/>
+<text x="600" y="318" class="node-name" text-anchor="middle">2</text>
+<rect x="664" y="284" width="112" height="56" class="paper" />
+<rect x="664" y="284" width="112" height="56" class="cell" data-row="Help" data-col="Other" data-value="6" style="fill:var(--ink);fill-opacity:0.06833"/>
+<text x="720" y="318" class="node-name" text-anchor="middle">6</text>
+<text x="164" y="376" class="node-name" text-anchor="end">Archive</text>
+<rect x="184" y="348" width="112" height="56" class="paper" />
+<rect x="184" y="348" width="112" height="56" class="cell" data-row="Archive" data-col="Blog" data-value="6" style="fill:var(--ink);fill-opacity:0.06833"/>
+<text x="240" y="382" class="node-name" text-anchor="middle">6</text>
+<rect x="304" y="348" width="112" height="56" class="paper" />
+<rect x="304" y="348" width="112" height="56" class="cell" data-row="Archive" data-col="Products" data-value="2" style="fill:var(--ink);fill-opacity:0.06278"/>
+<text x="360" y="382" class="node-name" text-anchor="middle">2</text>
+<rect x="424" y="348" width="112" height="56" class="paper" />
+<rect x="424" y="348" width="112" height="56" class="cell" data-row="Archive" data-col="Help" data-value="4" style="fill:var(--ink);fill-opacity:0.06556"/>
+<text x="480" y="382" class="node-name" text-anchor="middle">4</text>
+<rect x="544" y="348" width="112" height="56" class="paper" />
+<rect x="544" y="348" width="112" height="56" class="cell" data-row="Archive" data-col="Archive" data-value="24" style="fill:var(--ink);fill-opacity:0.09333"/>
+<text x="600" y="382" class="node-name" text-anchor="middle">24</text>
+<rect x="664" y="348" width="112" height="56" class="paper" />
+<rect x="664" y="348" width="112" height="56" class="cell" data-row="Archive" data-col="Other" data-value="2" style="fill:var(--ink);fill-opacity:0.06278"/>
+<text x="720" y="382" class="node-name" text-anchor="middle">2</text>
+<text x="164" y="440" class="node-name" text-anchor="end">Other</text>
+<rect x="184" y="412" width="112" height="56" class="paper" />
+<rect x="184" y="412" width="112" height="56" class="cell" data-row="Other" data-col="Blog" data-value="12" style="fill:var(--ink);fill-opacity:0.07667"/>
+<text x="240" y="446" class="node-name" text-anchor="middle">12</text>
+<rect x="304" y="412" width="112" height="56" class="paper" />
+<rect x="304" y="412" width="112" height="56" class="cell" data-row="Other" data-col="Products" data-value="12" style="fill:var(--ink);fill-opacity:0.07667"/>
+<text x="360" y="446" class="node-name" text-anchor="middle">12</text>
+<rect x="424" y="412" width="112" height="56" class="paper" />
+<rect x="424" y="412" width="112" height="56" class="cell" data-row="Other" data-col="Help" data-value="10" style="fill:var(--ink);fill-opacity:0.07389"/>
+<text x="480" y="446" class="node-name" text-anchor="middle">10</text>
+<rect x="544" y="412" width="112" height="56" class="paper" />
+<rect x="544" y="412" width="112" height="56" class="cell" data-row="Other" data-col="Archive" data-value="4" style="fill:var(--ink);fill-opacity:0.06556"/>
+<text x="600" y="446" class="node-name" text-anchor="middle">4</text>
+<rect x="664" y="412" width="112" height="56" class="paper" />
+<rect x="664" y="412" width="112" height="56" class="cell" data-row="Other" data-col="Other" data-value="36" style="fill:var(--ink);fill-opacity:0.11000"/>
+<text x="720" y="446" class="node-name" text-anchor="middle">36</text>
+<text x="48" y="508" class="muted" text-anchor="start">Blog → Products: 2 pairs. Compare with 60 Blog → Blog pairs; inspect sources before drawing conclusions.</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">LOW TINT → HIGH TINT · Non-focal range: 2–72 pairs. Exact counts appear in every cell.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">Blue identifies the selected Blog → Products cell (2 pairs). All groups included; diagonal cells are within-section links.</text>
+</svg>
+</div><figcaption>Rows are sources and columns are targets. Start with absolute unique URL-pair counts. A separately labelled “pairs per crawled source page” normalization can account for section size; it is not a probability and may exceed one.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>A complete section-to-section cross-tab; within-section links occupy the diagonal.</dd></div><div><dt>On selection</dt><dd>Open the source/target URL pairs for a cell, with section filters applied to the main table.</dd></div><div><dt>Loading strategy</dt><dd>Aggregate CSR edges once. Proposed display cap: 40 × 40 groups; combine the remaining groups into Other and preserve their totals.</dd></div></dl></section>
+<section id="depth-rank"><h2>05 · Depth and internal rank</h2><p class="question">Triage pages that may deserve a shorter route from the start URL.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="Depth and internal rank diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="depth-rank-title depth-rank-desc">
+<title id="depth-rank-title">Depth and internal rank</title><desc id="depth-rank-desc">An illustrative scatter plot places Widget at three links deep and 4.2 percent of graph rank, with Home at zero and six percent and Reference at four and 2.8 percent.</desc>
+<defs><marker id="depth-rank-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">Which important pages are buried deeper?</text>
+<text x="48" y="80" class="muted" text-anchor="start">Shortest-path depth vs share of internal rank · 12 illustrative pages, not a full crawl</text>
+<text x="96" y="104" class="muted" text-anchor="start">Share of internal rank (%)</text>
+<line x1="96" y1="440" x2="864" y2="440" class="grid"/>
+<text x="80" y="444" class="muted" text-anchor="end" font-size="12">0</text>
+<text x="96" y="464" class="muted" text-anchor="middle" font-size="12">0</text>
+<line x1="96" y1="388" x2="864" y2="388" class="grid"/>
+<text x="80" y="392" class="muted" text-anchor="end" font-size="12">1</text>
+<text x="224" y="464" class="muted" text-anchor="middle" font-size="12">1</text>
+<line x1="96" y1="336" x2="864" y2="336" class="grid"/>
+<text x="80" y="340" class="muted" text-anchor="end" font-size="12">2</text>
+<text x="352" y="464" class="muted" text-anchor="middle" font-size="12">2</text>
+<line x1="96" y1="284" x2="864" y2="284" class="grid"/>
+<text x="80" y="288" class="muted" text-anchor="end" font-size="12">3</text>
+<text x="480" y="464" class="muted" text-anchor="middle" font-size="12">3</text>
+<line x1="96" y1="232" x2="864" y2="232" class="grid"/>
+<text x="80" y="236" class="muted" text-anchor="end" font-size="12">4</text>
+<text x="608" y="464" class="muted" text-anchor="middle" font-size="12">4</text>
+<line x1="96" y1="180" x2="864" y2="180" class="grid"/>
+<text x="80" y="184" class="muted" text-anchor="end" font-size="12">5</text>
+<text x="736" y="464" class="muted" text-anchor="middle" font-size="12">5</text>
+<line x1="96" y1="128" x2="864" y2="128" class="grid"/>
+<text x="80" y="132" class="muted" text-anchor="end" font-size="12">6</text>
+<text x="864" y="464" class="muted" text-anchor="middle" font-size="12">6</text>
+<line x1="96" y1="128" x2="96" y2="440" class="edge"/>
+<line x1="96" y1="440" x2="864" y2="440" class="edge"/>
+<circle cx="96" cy="128" r="5" class="point" data-name="Home" data-x="0" data-y="6"/>
+<rect x="108" y="140" width="80" height="24" class="paper" rx="2"/>
+<text x="112" y="156" class="node-name" text-anchor="start" font-size="13">Home · 6%</text>
+<circle cx="224" cy="263.20000000000005" r="5" class="point" data-name="Blog" data-x="1" data-y="3.4"/>
+<circle cx="224" cy="278.79999999999995" r="5" class="point" data-name="Products" data-x="1" data-y="3.1"/>
+<circle cx="224" cy="310.0" r="5" class="point" data-name="Help" data-x="1" data-y="2.5"/>
+<circle cx="352" cy="320.4" r="5" class="point" data-name="Category" data-x="2" data-y="2.3"/>
+<circle cx="352" cy="341.2" r="5" class="point" data-name="Guide" data-x="2" data-y="1.9"/>
+<circle cx="480" cy="221.6" r="6" class="point focal" data-name="Widget" data-x="3" data-y="4.2"/>
+<rect x="492" y="189.6" width="112" height="24" class="paper" rx="2"/>
+<text x="496" y="205.6" class="node-name" text-anchor="start" font-size="13">Widget · 4.2%</text>
+<circle cx="480" cy="362.0" r="5" class="point" data-name="Archive" data-x="3" data-y="1.5"/>
+<circle cx="608" cy="294.4" r="5" class="point" data-name="Reference" data-x="4" data-y="2.8"/>
+<rect x="620" y="262.4" width="136" height="24" class="paper" rx="2"/>
+<text x="624" y="278.4" class="node-name" text-anchor="start" font-size="13">Reference · 2.8%</text>
+<circle cx="608" cy="398.4" r="5" class="point" data-name="Thin" data-x="4" data-y="0.8"/>
+<circle cx="736" cy="419.2" r="5" class="point" data-name="Old" data-x="5" data-y="0.4"/>
+<circle cx="864" cy="429.6" r="5" class="point" data-name="Deep" data-x="6" data-y="0.2"/>
+<text x="480" y="504" class="muted" text-anchor="middle">Shortest path from start (links)</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">POSITION = DEPTH AND INTERNAL RANK · Widget: 3 links deep, 4.2% of example graph rank.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">Internal rank is Tadpole’s link-graph score, not Google PageRank. No performance, traffic or business-value inference.</text>
+</svg>
+</div><figcaption>Show this as a distribution, with a selected-page label and exact values in the table. A page can have high link rank because of boilerplate; inspection and business context determine whether to change its links. This concept is a Tadpole proposal, not a verified vendor feature.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>One URL per point in the small-site view; labelled density bins for large sites.</dd></div><div><dt>On selection</dt><dd>Select a region to open its URLs, then inspect the chosen page in the neighborhood view.</dd></div><div><dt>Loading strategy</dt><dd>Compute rank in a cancellable worker only when needed. For large crawls, prepare a bounded density grid plus selected/outlier points; use exact counts, not an unlabelled sample.</dd></div></dl></section>
+<section id="loading"><h2>06 · Loading and interaction</h2><p class="question">Make opening, changing views and moving the pointer inexpensive.</p>
+
+<figure><div class="diagram-container" tabindex="0" role="region" aria-label="Loading and interaction diagram; scroll horizontally on narrow screens"><svg viewBox="0 0 960 600" role="img" aria-labelledby="loading-title loading-desc">
+<title id="loading-title">Loading and interaction</title><desc id="loading-desc">Open, view and filter requests feed a one-slot newest-request queue and one worker; current results reach GTK, while stale revisions are discarded.</desc>
+<defs><marker id="loading-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z" class="arrow-head"/>
+</marker></defs>
+<rect x="0" y="0" width="960" height="600" class="paper" />
+<text x="48" y="48" class="figure-title" text-anchor="start">Keep the window responsive while work runs</text>
+<text x="48" y="80" class="muted" text-anchor="start">Proposed architecture · one active job + one newest pending request</text>
+<path d="M 216 144 H 248 Q 256 144 256 152 V 244 Q 256 252 264 252 H 296" class="edge" marker-end="url(#loading-arrow)"/>
+<path d="M 216 272 H 296" class="edge" marker-end="url(#loading-arrow)"/>
+<path d="M 216 400 H 264 Q 272 400 272 392 V 320 Q 272 312 280 312 H 296" class="edge" marker-end="url(#loading-arrow)"/>
+<path d="M 464 284 H 544" class="edge" marker-end="url(#loading-arrow)"/>
+<path d="M 712 264 H 720 Q 728 264 728 256 V 192 Q 728 184 736 184 H 744" class="edge" marker-end="url(#loading-arrow)"/>
+<path d="M 712 304 H 720 Q 728 304 728 312 V 380 Q 728 388 736 388 H 744" class="edge dashed" marker-end="url(#loading-arrow)"/>
+<rect x="48" y="116" width="168" height="56" class="node" rx="6"/>
+<text x="132.0" y="139.0" class="node-name" text-anchor="middle">Open visualization</text>
+<text x="132.0" y="159.0" class="url muted" text-anchor="middle">snapshot v17</text>
+<rect x="48" y="244" width="168" height="56" class="node" rx="6"/>
+<text x="132.0" y="267.0" class="node-name" text-anchor="middle">Change view</text>
+<text x="132.0" y="287.0" class="url muted" text-anchor="middle">same snapshot</text>
+<rect x="48" y="372" width="168" height="56" class="node" rx="6"/>
+<text x="132.0" y="395.0" class="node-name" text-anchor="middle">Change filter</text>
+<text x="132.0" y="415.0" class="url muted" text-anchor="middle">new request key</text>
+<rect x="296" y="228" width="168" height="112" class="node" rx="6"/>
+<text x="380" y="252" class="node-name" text-anchor="middle">Newest request</text>
+<rect x="312" y="268" width="136" height="32" class="queue-slot" rx="2"/>
+<text x="380" y="289" class="url" text-anchor="middle">v17 · depth/rank</text>
+<text x="380" y="324" class="muted" text-anchor="middle" font-size="12">1 pending slot</text>
+<rect x="544" y="248" width="168" height="72" class="node focal" rx="6"/>
+<text x="628.0" y="279.0" class="node-name" text-anchor="middle">Prepare + cache</text>
+<text x="628.0" y="299.0" class="url muted" text-anchor="middle">1 active worker</text>
+<rect x="744" y="148" width="168" height="72" class="node" rx="6"/>
+<text x="828.0" y="179.0" class="node-name" text-anchor="middle">Current frame</text>
+<text x="828.0" y="199.0" class="url muted" text-anchor="middle">GTK main thread</text>
+<rect x="744" y="352" width="168" height="72" class="node" rx="6"/>
+<text x="828.0" y="383.0" class="node-name" text-anchor="middle">Superseded result</text>
+<text x="828.0" y="403.0" class="url muted" text-anchor="middle">discard by revision</text>
+<text x="544" y="456" class="muted" text-anchor="start">Coalesce repeated requests.</text>
+<text x="544" y="480" class="muted" text-anchor="start">Cancel work; retain the last usable frame.</text>
+<line x1="40" y1="548" x2="920" y2="548" class="rule"/>
+<text x="48" y="572" class="legend" text-anchor="start">SOLID = ACCEPTED WORK / RESULT · DASHED = STALE RESULT · Capacity: 1 active + 1 pending.</text>
+<text x="48" y="592" class="legend muted" text-anchor="start">Snapshot, view, metric, focus, filter and viewport form the cache key. Painting and hit testing reuse prepared geometry.</text>
+</svg>
+</div><figcaption>The worker receives compact immutable crawl facts. GTK widgets and painting stay on the main thread. The cache stores prepared view frames; geometry is also the hit-test index. Cancelled or obsolete results cannot overwrite a newer selection.</figcaption></figure>
+<dl><div><dt>Read it as</dt><dd>A bounded latest-request queue with explicit accepted and discarded outcomes.</dd></div><div><dt>On selection</dt><dd>Show current preparation status, allow cancellation and retry, and keep the selected URL and last usable frame.</dd></div><div><dt>Loading strategy</dt><dd>Window chrome first, aggregates next, detailed layouts on demand. Provisional targets and the reproducible CPU baseline are documented in the accompanying design report.</dd></div></dl></section><footer><p>Next step: fix the current loading and hit-testing path, then introduce the section matrix and selected-page neighborhood. Add the reconstructed tree and rank distribution after their data contracts are explicit.</p><p><a href="design.md">Design and performance specification</a> · <a href="../research/seo-visualizations.md">First-party vendor research</a> · <a href="style-guide.md">Local style receipt</a></p><p>Style review is pending. Verify the palette, typography, contrast and light/dark rendering before treating this as an approved visual baseline.</p></footer></main></body></html>
