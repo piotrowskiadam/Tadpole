@@ -1,6 +1,6 @@
 # Tadpole modernization audit — 2026-10-31
 
-Scope: all tracked Rust modules, integration tests, build/release scripts and Markdown documentation, starting from `be686f5`. UI evidence included the older committed screenshot and a source review of GTK widgets. Changes preserve the native application and add the owner-selected content-brief/SERP workflow. This is a code audit, not a certification of SEO accuracy, accessibility, packaging or provider availability.
+Scope: all tracked Rust modules, integration tests, build/release scripts and Markdown documentation, starting from `be686f5`. UI evidence included the older committed screenshot and a source review of GTK widgets. Changes preserve the native application and retain the existing page-level AI suggestions. Additional research workflows were deferred at the owner's request. This is a code audit, not a certification of SEO accuracy, accessibility, packaging or provider availability.
 
 ## Implementation integrity
 
@@ -15,7 +15,7 @@ The core product is coherent: local crawling, a virtualized audit table, diagnos
 | P1 | Bounded frontier filled from all workers | Seed lists over 10k or high fan-out could deadlock | Admission bounded by configured URL count; nonblocking discovery frontier |
 | P1 | Table filtering cloned every result for every row; row access cloned full page content | Search/sort/filter scaled poorly and increased allocation | Shallow Rc row access and incremental duplicate index; indexed aggregate counts and throttled refresh |
 | P1 | Relative canonical comparison, overwritten redirect status, ignored X-Robots-Tag, scripts counted as words | Misleading indexability/content metrics | Resolved/fragment-free canonicals; redirect classification retained; header directives recognized; script/style/template text excluded |
-| P1 | Provider requests lacked bounded time/output and robust response validation | Hung actions, unknown costs, misleading success on failed tasks | Shared provider module, limits/timeouts, empty/truncated/error handling, both DataForSEO status levels checked |
+| P1 | Provider requests lacked bounded time/output and robust response validation | Hung actions, unknown costs, misleading success on failed tasks | Shared provider module, limits/timeouts, empty/truncated/error handling |
 | P1 | Slug-only Markdown names, synchronous project writes, ignored save errors | Silent overwrites, blocked UI and uncertain save success | URL-hash names, background writes, atomic project replacement and visible errors |
 | P2 | Startup rewrote user launchers/icons and ran external cache tools each time | Unnecessary startup I/O and installation side effects | Removed; package installation owns launcher/icon registration |
 | P2 | UI titlebar held a fixed 450px URL entry; dashboard consumed fixed space | Compact windows crowded primary controls | Separate expanding crawl toolbar, hideable panels and native width breakpoints |
@@ -36,7 +36,7 @@ Impeccable's native audit dimensions were adapted to GTK/Libadwaita desktop, rat
 
 | Dimension | Baseline estimate | Main evidence / change |
 | --- | --- | --- |
-| Accessibility | 2/4 | Native GTK controls and selectable text; URL/mode/Studio inputs gain explicit labels; canvas keyboard/screen-reader parity remains unverified |
+| Accessibility | 2/4 | Native GTK controls and selectable text; URL/mode inputs gain explicit labels; canvas keyboard/screen-reader parity remains unverified |
 | Performance | 1/4 | Nested full-result clones/scans and synchronous persistence; indexing/background work now address the verified hot paths |
 | Appearance/theming | 2/4 | Native system styling was overridden by fixed status/font values; semantic tokens restored, custom syntax/canvas palettes remain |
 | Platform conformance | 3/4 | Native Libadwaita navigation/controls; removed startup installation side effects and retained standard focus/selection behavior |
@@ -45,7 +45,7 @@ Impeccable's native audit dimensions were adapted to GTK/Libadwaita desktop, rat
 
 Positive foundations: Rust ownership, an async HTTP client, native virtualized ColumnView, explicit data models, structured Serde JSON and compact CSR graph snapshots. Keep these. The modernization does not require a rewrite to a web stack.
 
-SEO Studio makes the new feature discoverable next to the crawl workspace. It explains costs/transmissions before action, keeps evidence and suggestions in separate tabs, works with no crawl and supports copy/save. Market/topic changes invalidate evidence; failed requests leave prior reports available. Output is editable outside the app, and content remains selectable plain text.
+Page-level AI actions disclose the transmitted page context beside the controls. The standalone research workspace, its brief generation and search-data client were removed at the owner's request.
 
 ## Verification
 

@@ -23,22 +23,6 @@ fn main() {
             main.window().set_default_size(width, 760);
         }
         main.present();
-        if std::env::var_os("TADPOLE_PREVIEW_STUDIO").is_some() {
-            tadpole::ui::workbench::present(main.window(), tadpole::state::CrawlState::new(), None);
-            if let Some(width) = std::env::var("TADPOLE_PREVIEW_WIDTH")
-                .ok()
-                .and_then(|w| w.parse().ok())
-            {
-                for window in gtk::Window::list_toplevels()
-                    .into_iter()
-                    .filter_map(|w| w.downcast::<gtk::Window>().ok())
-                {
-                    if window.title().is_some_and(|t| t.starts_with("SEO Studio")) {
-                        window.set_default_size(width, 660);
-                    }
-                }
-            }
-        }
     });
     app.run();
 }

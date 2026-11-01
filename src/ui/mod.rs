@@ -7,4 +7,3 @@ pub mod summary;
 pub mod table;
 pub mod theme;
 pub mod window;
-pub mod workbench;

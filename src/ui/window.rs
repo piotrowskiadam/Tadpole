@@ -243,19 +243,6 @@ impl MainWindow {
         content_box.append(&main_paned);
 
         let table = Rc::new(Table::new());
-        let studio_button = gtk::Button::with_label("SEO Studio");
-        studio_button.set_tooltip_text(Some("Research Google results and generate content briefs"));
-        header_bar.pack_start(&studio_button);
-        let state_studio = state.clone();
-        let table_studio = table.clone();
-        let parent_studio = window.clone();
-        studio_button.connect_clicked(move |_| {
-            crate::ui::workbench::present(
-                &parent_studio,
-                state_studio.clone(),
-                table_studio.get_selected_url(),
-            );
-        });
 
         // Active filter banner shown when a sidebar filter is engaged
         let filter_banner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -409,7 +396,7 @@ impl MainWindow {
         main_box.append(&status_bar);
 
         let status_label = gtk::Label::new(Some(
-            "Enter a website URL and choose Start, or open SEO Studio to research a topic.",
+            "Enter a website URL and choose Start, or open a saved crawl project.",
         ));
         status_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         status_label.set_hexpand(true);
@@ -843,13 +830,6 @@ impl MainWindow {
                 .text(config.ai_api_key.as_deref().unwrap_or(""))
                 .build();
             group_ai.add(&api_key_row);
-            let dataforseo_group = adw::PreferencesGroup::builder().title("DataForSEO · Google SERP")
-                .description("API credentials stay in memory and are never saved in crawl projects. Requests are made only from SEO Studio.").build();
-            let dataforseo_login = adw::EntryRow::builder().title("DataForSEO API login").text(config.dataforseo_login.as_deref().unwrap_or("")).build();
-            let dataforseo_password = adw::PasswordEntryRow::builder().title("DataForSEO API password").text(config.dataforseo_password.as_deref().unwrap_or("")).build();
-            dataforseo_group.add(&dataforseo_login);
-            dataforseo_group.add(&dataforseo_password);
-            page_ai.add(&dataforseo_group);
 
             let openai_models = std::rc::Rc::new(vec![
                 "gpt-4o".to_string(),
@@ -1279,8 +1259,6 @@ impl MainWindow {
                     ai_provider: provider,
                     ai_api_key: if api_key_text.trim().is_empty() { None } else { Some(api_key_text) },
                     ai_model: final_model,
-                    dataforseo_login: Some(dataforseo_login.text().to_string()).filter(|s| !s.trim().is_empty()),
-                    dataforseo_password: Some(dataforseo_password.text().to_string()).filter(|s| !s.trim().is_empty()),
                     download_images: download_images_row.is_active(),
                     project_dir: current_config.project_dir, // Preserve
                     crawl_mode: current_config.crawl_mode, // Preserve

@@ -1,8 +1,8 @@
 use serde_json::json;
 use tadpole::{
+    ai::parse_completion,
     crawler::{CrawlUpdate, Crawler, parse_html},
     filters::{CrawlFilter, DuplicateIndex},
-    integrations::{brief_prompt, parse_completion, parse_serp},
     state::{CrawlConfig, CrawlMode, CrawlResult, CrawlState},
 };
 
@@ -14,18 +14,14 @@ fn page(url: &str) -> CrawlResult {
 fn secrets_are_never_serialized_deserialized_or_debugged() {
     let config = CrawlConfig {
         ai_api_key: Some("secret-ai".into()),
-        dataforseo_login: Some("secret-login".into()),
-        dataforseo_password: Some("secret-password".into()),
         ..Default::default()
     };
     let json = serde_json::to_string(&config).unwrap();
     assert!(!json.contains("secret-"));
     assert!(!format!("{config:?}").contains("secret-"));
     let legacy: CrawlConfig =
-        serde_json::from_value(json!({"ai_api_key":"legacy-secret", "dataforseo_password":"bad"}))
-            .unwrap();
+        serde_json::from_value(json!({"ai_api_key":"legacy-secret"})).unwrap();
     assert!(legacy.ai_api_key.is_none());
-    assert!(legacy.dataforseo_password.is_none());
     assert_eq!(legacy.max_urls, 500);
 }
 
@@ -92,24 +88,7 @@ fn canonical_and_visible_text_are_normalized() {
 }
 
 #[test]
-fn serif_task_errors_empty_results_and_completion_errors_are_visible() {
-    assert!(
-        parse_serp(
-            &json!({"status_code":20000,"tasks":[{"status_code":40501}]}),
-            "test"
-        )
-        .is_err()
-    );
-    assert!(
-        parse_serp(
-            &json!({"status_code":20000,"tasks":[{"status_code":20000,"result":null}]}),
-            "test"
-        )
-        .is_err()
-    );
-    let report = parse_serp(&json!({"status_code":20000,"tasks":[{"status_code":20000,"cost":0.002,"result":[{"items":[{"type":"paid","title":"Ad"},{"type":"organic","title":"Result","rank_group":1,"url":"https://example.com"}]}]}]}), "test").unwrap();
-    assert_eq!(report.items.len(), 1);
-    assert_eq!(report.cost, 0.002);
+fn completion_errors_empty_and_truncated_results_are_visible() {
     assert!(parse_completion(&json!({"error":{"message":"private"}})).is_err());
     assert!(parse_completion(&json!({"choices":[{"message":{"content":" "}}]})).is_err());
     assert!(
@@ -122,7 +101,6 @@ fn serif_task_errors_empty_results_and_completion_errors_are_visible() {
         parse_completion(&json!({"choices":[{"message":{"content":" Done "}}]})).unwrap(),
         "Done"
     );
-    assert!(brief_prompt("test", "Polish", "", None).contains("hypotheses"));
 }
 
 #[test]

@@ -28,15 +28,14 @@ For isolated testing, start `gtk4-broadwayd :8 --port=8088 --address=127.0.0.1`,
 GDK_BACKEND=broadway BROADWAY_DISPLAY=:8 GSK_RENDERER=broadway target/debug/examples/ui_preview
 ```
 
-The crawl window has an 800px minimum to keep native header controls reachable. Set `TADPOLE_PREVIEW_STUDIO=1` to open Studio, `TADPOLE_PREVIEW_WIDTH=640` for a compact window, and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
+The crawl window has an 800px minimum to keep native header controls reachable. Set `TADPOLE_PREVIEW_WIDTH=1024` for a compact crawl window and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
 
 Manual release checklist:
 
 - Start, pause, resume and stop a crawl; start another crawl and verify that old results do not arrive.
 - Open/save an older project; use an unwritable destination; verify error recovery and credential exclusion.
 - Check filter/search/sort and filtered CSV, including late incoming links after completion.
-- At 1024px and 1200px widths, inspect toolbar, filter panel, dashboard, details tabs and Studio reports; check system light/dark themes and larger text.
-- In Studio, check empty topic/missing credentials, successful/failed SERP, a brief with/without page/evidence, keyword/market invalidation, and both report exports. Use test fixtures for routine tests; any real provider calls cost money.
+- At 1024px and 1200px widths, inspect toolbar, filter panel, dashboard, details tabs; check system light/dark themes and larger text.
 - Check keyboard focus, field names and icon descriptions with the platform accessibility inspector/screen reader.
 
 ## Packaging
@@ -57,7 +56,7 @@ Manual release checklist:
 - Rendering/layout/graph modules include experimental groundwork. No web renderer, persisted layout cache, rank-aware UI or 3D constellation is currently shipped in the main visualizer.
 - Store credentials in an OS keyring in a future opt-in persistence feature; do not reintroduce secrets into CrawlConfig serialization.
 - API parser tests use fixtures. End-to-end billable calls and provider model availability require owner-supplied credentials and are not part of CI.
-- Localization, broader DataForSEO market selection, accessible canvas alternatives, fully bundled AppImages and real OS package validation are separate deliverables.
+- Localization, accessible canvas alternatives, fully bundled AppImages and real OS package validation are separate deliverables.
 
 ## Provider references
 
@@ -65,5 +64,3 @@ Contracts checked against primary documentation on 2026-10-31:
 
 - [OpenRouter API overview](https://openrouter.ai/docs/api/reference/overview): endpoint, messages/model, output limit, attribution headers, completion text.
 - [OpenRouter error handling](https://openrouter.ai/docs/api_reference/errors-and-debugging): HTTP/provider error cases.
-- [DataForSEO Google Organic Live Advanced](https://docs.dataforseo.com/v3/serp/google/organic/live/advanced/): Basic Auth, keyword/location/language/depth, organic items, task cost.
-- [DataForSEO common errors](https://dataforseo.com/help-center/common-first-errors-with-dataforseo-api-and-how-to-fix-them): task status can fail inside HTTP 200.

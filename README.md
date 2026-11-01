@@ -2,7 +2,7 @@
 
 # Tadpole
 
-A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a website, inspect its internal links and structured data, export page content, or research a topic in SEO Studio.
+A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a website, inspect its internal links and structured data, export page content and generate page-level metadata suggestions.
 
 [Downloads](https://github.com/piotrowskiadam/Tadpole/releases) · [Issue tracker](https://github.com/piotrowskiadam/Tadpole/issues) · [Developer guide](docs/DEVELOPMENT.md) · [Architecture](ARCHITECTURE.md) · [Modernization audit](docs/AUDIT.md)
 
@@ -19,22 +19,13 @@ A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a websit
 
 SEO health is a local heuristic, not a Google score. Schema diagnostics check syntax and selected fields; they do not certify rich-result eligibility. A crawl cannot discover truly orphaned pages that have no links from the seed; provide those URLs in List mode.
 
-## SEO Studio: content briefs and Google SERP
+## Optional AI metadata suggestions
 
-Choose **SEO Studio** in the header. It works independently of a crawl.
+In **Preferences → AI Assistant**, choose OpenRouter or OpenAI, enter your API key and select a model (or enter a custom model ID). The selected page's details offer title, description and image alt-text suggestions based on crawled page content.
 
-1. In **Preferences → AI Assistant**, choose OpenRouter or OpenAI, enter your key, and select a model (or enter a custom model ID).
-2. Optionally enter your **DataForSEO API login and password** on the same preferences page. These differ from some account login credentials; use [API access](https://app.dataforseo.com/api-access).
-3. Enter a topic/keyword and choose Poland/Polish, United States/English, or United Kingdom/English.
-4. **Fetch Google SERP** sends one DataForSEO Live Advanced request with depth 10. The report includes organic results, snippets, URLs and the task cost returned by DataForSEO.
-5. **Generate content brief** sends one completion request to the chosen AI provider. It can use the SERP evidence and, if selected, content from the page selected when Studio opened. Without SERP evidence, competitive/search-intent suggestions are explicitly treated as hypotheses.
-6. Review the result and copy it or save it as Markdown. The brief includes intent, audience, metadata, outline, questions, differentiation, internal-link suggestions and a fact-check checklist.
+**Privacy and cost:** ordinary crawling stays local apart from requests to crawled websites. Clicking a page-level AI action sends the page URL, metadata, headings and up to 12,000 characters of page text to the chosen provider. The provider bills your account. Requests have timeouts and input/output limits; there are no automatic paid requests or application-level retries. API credentials stay in memory for the session and must be entered again after restarting. They are excluded from project files and config debug output; embedded legacy project keys are ignored. Older files may still contain keys saved by previous versions—remove those keys and rotate them if the files were shared.
 
-Changing the keyword or market invalidates the SERP evidence. Reports remain separate: generating a brief never overwrites the source SERP report. Brief output follows the selected market language. To include a different page, select it in the crawl table and reopen Studio.
-
-**Privacy and cost:** ordinary crawling stays local apart from requests to the crawled websites. Clicking an AI action sends the displayed topic/context to your selected provider; fetching SERP sends the keyword/market to DataForSEO. Providers bill your account. There are no automatic paid requests or application-level retries. Completion input/output and response sizes are bounded, but token limits do not guarantee a fixed monetary cost. Credentials are held in memory for the session and must be entered again after restarting. They are never serialized, imported from old project keys, or included in config debug output. Older project files created by previous versions may already contain keys; remove those keys and rotate them if the files were shared.
-
-Existing title and description suggestions now use crawled content as context. Image alt-text suggestions remain text-only suggestions based on image URL/page context; they do not inspect image pixels.
+Review generated suggestions before using them. Image alt-text suggestions are text-only and do not inspect image pixels.
 
 ## Build and run
 

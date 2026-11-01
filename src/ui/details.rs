@@ -1400,7 +1400,7 @@ fn suggest_title_with_ai(
     let page_url = state
         .get_result(page_url)
         .as_ref()
-        .map(crate::integrations::page_context)
+        .map(crate::ai::page_context)
         .unwrap_or_else(|| page_url.to_string());
     let provider = config.ai_provider.clone();
     let model = config.ai_model.clone();
@@ -1443,7 +1443,7 @@ fn suggest_desc_with_ai(page_url: &str, state: &CrawlState, val_lbl: gtk::Label,
     let page_url = state
         .get_result(page_url)
         .as_ref()
-        .map(crate::integrations::page_context)
+        .map(crate::ai::page_context)
         .unwrap_or_else(|| page_url.to_string());
     let provider = config.ai_provider.clone();
     let model = config.ai_model.clone();
@@ -1492,7 +1492,7 @@ fn suggest_alt_text_with_ai(
     let page_url = state
         .get_result(page_url)
         .as_ref()
-        .map(crate::integrations::page_context)
+        .map(crate::ai::page_context)
         .unwrap_or_else(|| page_url.to_string());
     let img_src = img_src.to_string();
     let provider = config.ai_provider.clone();
@@ -1527,16 +1527,14 @@ async fn call_ai_api(
     api_key: &str,
     model: &str,
     prompt: &str,
-) -> crate::integrations::ApiResult<String> {
+) -> crate::ai::ApiResult<String> {
     let config = crate::state::CrawlConfig {
         ai_provider: provider.into(),
         ai_api_key: Some(api_key.into()),
         ai_model: model.into(),
         ..Default::default()
     };
-    crate::integrations::SeoIntegrations::new()?
-        .complete(&config, prompt)
-        .await
+    crate::ai::AiClient::new()?.complete(&config, prompt).await
 }
 
 // Export helpers

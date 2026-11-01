@@ -14,13 +14,12 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 | `src/markdown.rs` | HTML-to-Markdown conversion and extraction settings |
 | `src/filters.rs` | GTK-independent audit filters and duplicate indexes |
 | `src/project.rs` | Atomic project writes and stable Markdown filenames |
-| `src/integrations.rs` | OpenRouter/OpenAI completions, DataForSEO SERP, response validation and editorial prompts |
+| `src/ai.rs` | Bounded OpenRouter/OpenAI completions, response validation and page context |
 | `src/ui/window.rs` | Crawl workspace, preferences and GTK event handling |
 | `src/ui/table.rs`, `row_data.rs` | Virtualized results model, sorting, filtering, CSV/clipboard exports |
 | `src/ui/details.rs` | Selected-page diagnostics and metadata suggestions |
 | `src/ui/sidebar.rs`, `summary.rs` | Filters and local health/progress summaries |
 | `src/ui/link_opportunities.rs` | Cancellable background internal-link and n-gram analysis |
-| `src/ui/workbench.rs` | Separate SEO Studio window and explicit paid actions |
 | `src/ui/theme.rs` | Shared semantic Libadwaita styling |
 | `src/ui/site_visualizer.rs` | Native Cairo URL icicle UI |
 | `src/visualization/` | CSR graph snapshots, layouts, PageRank, sections, filtering and exports |
@@ -48,11 +47,9 @@ Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` impl
 
 ## External providers
 
-The integration module has no GTK dependency. The UI supplies session config and an explicit topic/prompt; the module owns provider-specific URLs, bounded HTTP requests, status validation and response interpretation. It never crawls competitor URLs returned by SERP.
+The AI module has no GTK dependency. Page-level suggestion actions supply session config and a prompt with crawled page context; the module owns provider-specific URLs, bounded HTTP requests, status validation and response interpretation. No standalone research workspace or search-data provider client is included.
 
 - Completions: 90-second total timeout, 10-second connect timeout, 2 MiB response limit, 30k-character prompt limit and 2,500 output tokens. HTTP bodies are omitted from errors to avoid echoing secrets/context. Empty, failed and truncated completions are rejected.
-- DataForSEO: one Google Organic Live Advanced task, depth 10, Basic Auth, both envelope and task status must equal 20000. Organic items and task cost are extracted; missing results are errors.
-- Studio: keyword/market changes invalidate cached evidence; active requests lock those inputs. Report state is per window and is not stored in crawl projects. Requests require explicit buttons and do not automatically retry.
 
 ## Visualization truth
 

@@ -135,10 +135,6 @@ pub struct CrawlConfig {
     pub ai_provider: String, // "OpenAI" or "OpenRouter"
     #[serde(skip)]
     pub ai_api_key: Option<String>,
-    #[serde(skip)]
-    pub dataforseo_login: Option<String>,
-    #[serde(skip)]
-    pub dataforseo_password: Option<String>,
     pub ai_model: String, // e.g. "gpt-4o"
 
     // Image downloads
@@ -178,8 +174,6 @@ impl Default for CrawlConfig {
             exclude_regex: None,
             ai_provider: "OpenAI".to_string(),
             ai_api_key: None,
-            dataforseo_login: None,
-            dataforseo_password: None,
             ai_model: "gpt-4o".to_string(),
             download_images: false,
             project_dir: None,
@@ -400,8 +394,6 @@ impl CrawlState {
         }
         let mut config = project.config;
         config.ai_api_key = inner.config.ai_api_key.clone();
-        config.dataforseo_login = inner.config.dataforseo_login.clone();
-        config.dataforseo_password = inner.config.dataforseo_password.clone();
         inner.config = config;
         inner.is_crawling = false;
         inner.is_paused = false;
