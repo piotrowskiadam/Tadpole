@@ -16,13 +16,19 @@ The regression suite covers credential serialization/debugging/legacy import, st
 
 ## Visual previews
 
-`examples/ui_preview.rs` creates the real GTK widgets, renders them through GSK and writes PNGs under `/tmp/tadpole-preview` (override with `TADPOLE_PREVIEW_DIR`). It does not capture the desktop, use real crawl data or call paid APIs. Compile it with:
+`examples/ui_preview.rs` opens the real GTK widgets in an isolated application ID. It uses no production crawl data and makes no paid API calls. Compile it with:
 
 ```sh
 cargo build --locked --example ui_preview
 ```
 
-For isolated testing, start `gtk4-broadwayd :8 --port=8088 --address=127.0.0.1`, connect a browser to `http://127.0.0.1:8088`, then run with `GDK_BACKEND=broadway BROADWAY_DISPLAY=:8 GSK_RENDERER=broadway`. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Previews cover the crawl workspace and Studio at desktop/compact sizes. They are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
+For isolated testing, start `gtk4-broadwayd :8 --port=8088 --address=127.0.0.1`, connect a browser to `http://127.0.0.1:8088`, then run:
+
+```sh
+GDK_BACKEND=broadway BROADWAY_DISPLAY=:8 GSK_RENDERER=broadway target/debug/examples/ui_preview
+```
+
+Set `TADPOLE_PREVIEW_STUDIO=1` to open Studio, `TADPOLE_PREVIEW_WIDTH=640` for a compact window, and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
 
 Manual release checklist:
 

@@ -199,7 +199,9 @@ impl Crawler {
 
         let base_domain = seed_urls[0].host_str().unwrap_or("localhost").to_string();
 
-        self.state.set_crawling(true);
+        if !self.state.is_crawling() {
+            self.state.set_crawling(true);
+        }
         self.state.set_paused(false);
 
         // Queue for URLs and depth to process (managed within async tokio task)
@@ -262,7 +264,7 @@ impl Crawler {
         // has completed or been cancelled; no detached task can modify a later crawl.
         let mut workers = tokio::task::JoinSet::new();
         loop {
-            if !crawler_arc.state.is_crawling() {
+            if crawler_arc.state.stop_requested() || !crawler_arc.state.is_crawling() {
                 workers.abort_all();
                 while workers.join_next().await.is_some() {}
                 break;

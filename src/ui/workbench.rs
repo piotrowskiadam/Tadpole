@@ -11,7 +11,7 @@ pub fn present(parent: &adw::ApplicationWindow, state: CrawlState, selected_url:
         .title("SEO Studio — Tadpole")
         .transient_for(parent)
         .default_width(900)
-        .default_height(760)
+        .default_height(680)
         .build();
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.append(&adw::HeaderBar::new());
@@ -21,7 +21,12 @@ pub fn present(parent: &adw::ApplicationWindow, state: CrawlState, selected_url:
     content.set_margin_end(18);
     content.set_margin_top(18);
     content.set_margin_bottom(18);
-    root.append(&content);
+    let content_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .child(&content)
+        .build();
+    root.append(&content_scroll);
     let title = gtk::Label::builder()
         .label("Research a topic. Build a better brief.")
         .xalign(0.0)
@@ -30,7 +35,7 @@ pub fn present(parent: &adw::ApplicationWindow, state: CrawlState, selected_url:
         .build();
     content.append(&title);
     let intro = gtk::Label::builder().label("Fetch Google results with DataForSEO, then generate an editorial brief with your AI provider. Each button sends one paid API request. Configure keys in Preferences.")
-        .wrap(true).xalign(0.0).css_classes(["dim-label"]).build();
+        .wrap(true).xalign(0.0).build();
     content.append(&intro);
     let keyword = gtk::Entry::builder()
         .placeholder_text("Topic or target keyword")

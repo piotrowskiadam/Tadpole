@@ -7,6 +7,26 @@ use adw::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+// A row-population task owns this guard across GLib yields. Replacement actions
+// remain unavailable until every row belongs to the current operation.
+struct UiBusyGuard {
+    busy: Rc<std::cell::Cell<bool>>,
+    start: gtk::Button,
+}
+impl UiBusyGuard {
+    fn new(busy: Rc<std::cell::Cell<bool>>, start: gtk::Button) -> Self {
+        busy.set(true);
+        start.set_sensitive(false);
+        Self { busy, start }
+    }
+}
+impl Drop for UiBusyGuard {
+    fn drop(&mut self) {
+        self.busy.set(false);
+        self.start.set_sensitive(true);
+    }
+}
+
 pub struct MainWindow {
     window: adw::ApplicationWindow,
     state: CrawlState,
@@ -465,6 +485,8 @@ impl MainWindow {
         filter_export_btn: gtk::Button,
     ) {
         let state = self.state.clone();
+        let ui_busy = Rc::new(std::cell::Cell::new(false));
+        let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
         let table = self.table.clone();
         let details = self.details.clone();
         let sidebar = self.sidebar.clone();
@@ -1519,7 +1541,11 @@ impl MainWindow {
         let loaded_list_urls_open = loaded_list_urls.clone();
         let link_opps_open = link_opps.clone();
         let status_label_open = status_label.clone();
+        let busy_open = ui_busy.clone();
+        let crawl_active_open = ui_crawl_active.clone();
+        let start_open = start_button.clone();
         open_button.connect_clicked(move |_| {
+            if busy_open.get() || crawl_active_open.get() { return; }
             if state_open.is_crawling() { status_label_open.set_text("Stop the current crawl before opening a project."); return; }
             let dialog = gtk::FileDialog::new();
             dialog.set_title("Open Crawl Project");
@@ -1531,6 +1557,8 @@ impl MainWindow {
             dialog.set_filters(Some(&filters));
 
             let state_inner = state_open.clone();
+            let busy_inner = busy_open.clone();
+            let start_inner = start_open.clone();
             let address_inner = address_entry_open.clone();
             let table_inner = table_open.clone();
             let sidebar_inner = sidebar_open.clone();
@@ -1545,6 +1573,8 @@ impl MainWindow {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
                         if state_inner.is_crawling() { status_label_inner.set_text("Stop the current crawl before opening a project."); return; }
+                        if busy_inner.get() { return; }
+                        let load_guard = UiBusyGuard::new(busy_inner.clone(), start_inner.clone());
                         status_label_inner.set_text("Loading saved crawl project...");
 
                         let state_bg = state_inner.clone();
@@ -1559,6 +1589,7 @@ impl MainWindow {
                         let status_label_bg = status_label_inner.clone();
 
                         glib::MainContext::default().spawn_local(async move {
+                            let _load_guard = load_guard;
                             let project_opt = tokio::task::spawn_blocking(move || {
                                 if let Ok(f) = std::fs::File::open(&path) {
                                     let project_res: Result<crate::state::CrawlProject, _> = serde_json::from_reader(f);
@@ -1634,6 +1665,8 @@ impl MainWindow {
         let summary_panel_clone = summary_panel.clone();
         let crawl_start_time_clone = crawl_start_time.clone();
         let crawl_samples_clone = crawl_samples.clone();
+        let busy_finish = ui_busy.clone();
+        let crawl_active_finish = ui_crawl_active.clone();
 
         glib::MainContext::default().spawn_local(async move {
             let mut last_refresh = std::time::Instant::now();
@@ -1729,9 +1762,9 @@ impl MainWindow {
                         progress_bar_clone.set_fraction(fraction.min(1.0));
                     }
                     CrawlUpdate::Finished => {
+                        let _refresh_guard = UiBusyGuard::new(busy_finish.clone(), start_button_clone.clone());
                         progress_bar_clone.set_visible(false);
                         start_button_clone.set_label("Start");
-                        start_button_clone.set_sensitive(true);
                         start_button_clone.remove_css_class("destructive-action");
                         pause_button_clone.set_sensitive(false);
                         pause_button_clone.set_label("Pause");
@@ -1755,6 +1788,7 @@ impl MainWindow {
                         sidebar_clone.update_counts(&state_clone);
                         summary_panel_clone.update(&state_clone);
                         table_clone.set_filter(table_clone.get_active_filter());
+                        crawl_active_finish.set(false);
                     }
                 }
             }
@@ -1778,11 +1812,12 @@ impl MainWindow {
         let crawl_samples_start = crawl_samples.clone();
 
         start_button.connect_clicked(move |btn| {
-            let is_crawling = state_start.is_crawling();
+            if !btn.is_sensitive() || ui_busy.get() { return; }
+            let is_crawling = ui_crawl_active.get();
 
             if is_crawling {
                 // Stop the crawl
-                state_start.set_crawling(false);
+                state_start.request_stop();
                 btn.set_sensitive(false);
                 btn.set_label("Stopping...");
                 pause_button_start.set_sensitive(false);
@@ -1832,9 +1867,13 @@ impl MainWindow {
                     let crawl_start_time = crawl_start_time_start.clone();
                     let crawl_samples = crawl_samples_start.clone();
                     let tx_worker = tx_clone.clone();
+                    let busy = ui_busy.clone();
+                    let crawl_active = ui_crawl_active.clone();
                     let btn = btn.clone();
 
                     move |urls: String| {
+                        if busy.get() || crawl_active.get() || state_start.is_crawling() { return; }
+                        crawl_active.set(true);
                         state_start.reset();
                         state_start.set_crawling(true);
                         table_start.clear();

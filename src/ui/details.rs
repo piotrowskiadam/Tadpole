@@ -1096,7 +1096,7 @@ impl Details {
                         );
                     });
 
-                    img_box.append(&suggest_alt_btn);
+                    img_box.append(&ai_action_group(&suggest_alt_btn));
                 } else {
                     alt_lbl.add_css_class("dim-label");
                 }
@@ -1343,7 +1343,7 @@ impl Details {
             .visible(false)
             .build();
         action_btn.add_css_class("flat");
-        row_box.append(&action_btn);
+        row_box.append(&ai_action_group(&action_btn));
 
         let list_row = gtk::ListBoxRow::new();
         list_row.set_child(Some(&row_box));
@@ -1358,6 +1358,24 @@ impl Details {
             list_box.remove(&row);
         }
     }
+}
+
+fn ai_action_group(button: &gtk::Button) -> gtk::Box {
+    let group = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    group.append(button);
+    let disclosure = gtk::Label::builder()
+        .label("Sends page text to your AI provider")
+        .wrap(true)
+        .max_width_chars(20)
+        .css_classes(["dim-label"])
+        .build();
+    group.append(&disclosure);
+    button.set_tooltip_text(Some("Sends the page URL, metadata, headings and up to 12,000 characters of page text to the configured AI provider. This uses your API balance."));
+    button
+        .bind_property("visible", &group, "visible")
+        .sync_create()
+        .build();
+    group
 }
 
 // AI helpers

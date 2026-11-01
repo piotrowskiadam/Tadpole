@@ -202,6 +202,7 @@ pub struct CrawlStateInner {
     pub discovered_set: HashSet<String>,
     pub is_crawling: bool,
     pub is_paused: bool,
+    pub stop_requested: bool,
     pub config: CrawlConfig,
     pub inlinks_map: HashMap<String, HashSet<String>>,
 }
@@ -220,6 +221,7 @@ impl CrawlState {
                 discovered_set: HashSet::new(),
                 is_crawling: false,
                 is_paused: false,
+                stop_requested: false,
                 config: CrawlConfig::default(),
                 inlinks_map: HashMap::new(),
             })),
@@ -233,6 +235,7 @@ impl CrawlState {
         inner.discovered_set.clear();
         inner.is_crawling = false;
         inner.is_paused = false;
+        inner.stop_requested = false;
         inner.inlinks_map.clear();
     }
 
@@ -324,7 +327,18 @@ impl CrawlState {
     }
 
     pub fn set_crawling(&self, val: bool) {
-        self.inner.write().is_crawling = val;
+        let mut inner = self.inner.write();
+        inner.is_crawling = val;
+        inner.stop_requested = false;
+    }
+
+    /// Request cancellation without claiming the coordinator has drained its workers.
+    pub fn request_stop(&self) {
+        self.inner.write().stop_requested = true;
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.inner.read().stop_requested
     }
 
     pub fn is_paused(&self) -> bool {
@@ -391,6 +405,7 @@ impl CrawlState {
         inner.config = config;
         inner.is_crawling = false;
         inner.is_paused = false;
+        inner.stop_requested = false;
     }
 
     pub fn get_project(&self, seed_url: String) -> CrawlProject {

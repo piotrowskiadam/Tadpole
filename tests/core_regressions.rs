@@ -206,8 +206,13 @@ async fn crawl_limit_finished_order_and_stop_are_strict() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let crawl = tokio::spawn(Crawler::new(state.clone(), tx).start(format!("{address}/slow")));
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    state.set_crawling(false);
+    state.request_stop();
+    assert!(
+        state.is_crawling(),
+        "Stop stays active until workers are drained"
+    );
     crawl.await.unwrap();
+    assert!(!state.is_crawling());
     while let Ok(update) = rx.try_recv() {
         if let CrawlUpdate::Finished = update {
             break;

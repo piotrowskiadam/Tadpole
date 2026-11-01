@@ -31,8 +31,8 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 2. The coordinator normalizes/deduplicates seeds and maintains a frontier. Discovery admission is bounded by `max_urls`; concurrency is clamped to 1–50.
 3. Every worker belongs to a Tokio `JoinSet`. Workers fetch/parse pages and discover links. The coordinator inserts completed results and emits `Crawled` events.
 4. Scheduling reserves capacity for in-flight pages, so the URL limit is strict. Pause suspends new work; already running requests finish.
-5. Stop aborts and drains owned workers. Only then does the coordinator clear active state and emit `Finished`. A completed old worker cannot insert results into a new crawl.
-6. GTK consumes events on its main context. Aggregate sidebar/dashboard work is limited to roughly four refreshes per second, with a final refresh when crawling ends.
+5. Stop requests cancellation while retaining the active flag, then aborts and drains owned workers. Only then does the coordinator clear active state and emit `Finished`. A completed old worker cannot insert results into a new crawl.
+6. GTK consumes events on its main context. Aggregate sidebar/dashboard work is limited to roughly four refreshes per second, with a final refresh when crawling ends. GTK retains its own active/busy state through event delivery and row population; Start/Open cannot replace data during GLib yields.
 
 The discovery/event channels are unbounded channel types; the admitted URL count bounds the frontier. This avoids a bounded frontier deadlock where every HTTP worker waits to enqueue links while the coordinator waits for workers to finish. `CrawlState` uses `parking_lot::RwLock`; no guard may cross an `.await`.
 

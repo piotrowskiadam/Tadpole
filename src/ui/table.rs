@@ -57,18 +57,18 @@ impl Table {
                     return true;
                 }
 
-                let url_match = res.url.to_lowercase().contains(&query);
+                let url_match = res.url.to_lowercase().contains(query.as_str());
                 let title_match = res
                     .title
                     .as_ref()
-                    .map_or(false, |t| t.to_lowercase().contains(&query));
+                    .map_or(false, |t| t.to_lowercase().contains(query.as_str()));
                 let desc_match = res
                     .meta_desc
                     .as_ref()
-                    .map_or(false, |d| d.to_lowercase().contains(&query));
+                    .map_or(false, |d| d.to_lowercase().contains(query.as_str()));
                 let status_match = res
                     .status_code
-                    .map_or(false, |c| c.to_string().contains(&query));
+                    .map_or(false, |c| c.to_string().contains(query.as_str()));
 
                 url_match || title_match || desc_match || status_match
             } else {
