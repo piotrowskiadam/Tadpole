@@ -28,7 +28,7 @@ For isolated testing, start `gtk4-broadwayd :8 --port=8088 --address=127.0.0.1`,
 GDK_BACKEND=broadway BROADWAY_DISPLAY=:8 GSK_RENDERER=broadway target/debug/examples/ui_preview
 ```
 
-Set `TADPOLE_PREVIEW_STUDIO=1` to open Studio, `TADPOLE_PREVIEW_WIDTH=640` for a compact window, and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
+The crawl window has an 800px minimum to keep native header controls reachable. Set `TADPOLE_PREVIEW_STUDIO=1` to open Studio, `TADPOLE_PREVIEW_WIDTH=640` for a compact window, and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
 
 Manual release checklist:
 

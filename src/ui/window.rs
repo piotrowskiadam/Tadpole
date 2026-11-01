@@ -61,6 +61,7 @@ impl MainWindow {
             .title("Tadpole")
             .icon_name("com.tadpole.seo")
             .default_width(1200)
+            .width_request(800)
             .default_height(800)
             .build();
 
