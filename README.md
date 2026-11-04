@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://snapcraft.io/tadpole">
-    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store">
+    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store" width="156" height="48">
   </a>
 </p>
 
