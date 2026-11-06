@@ -56,10 +56,17 @@ impl MainWindow {
         // Limit to 500 URLs by default (Screaming Frog free limit style!)
         let state = CrawlState::new();
 
+        let app_id = app.application_id();
+        let flatpak_id = std::env::var("FLATPAK_ID").ok();
+        let icon_name = if app_id.as_deref() == flatpak_id.as_deref() {
+            app_id.as_deref().unwrap_or(crate::DESKTOP_APP_ID)
+        } else {
+            crate::DESKTOP_APP_ID
+        };
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("Tadpole")
-            .icon_name("com.tadpole.seo")
+            .icon_name(icon_name)
             .default_width(1200)
             .width_request(800)
             .default_height(800)

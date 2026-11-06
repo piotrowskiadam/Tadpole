@@ -351,7 +351,19 @@ impl Crawler {
             }
         }
         if config.js_rendering && browser.is_none() {
-            return CrawlResult::new_failed(url_str.into(), None, Some("JavaScript rendering requires an installed Chrome/Chromium. Install it or disable rendering in Preferences.".into()), "Rendering Failed".into(), depth, 0);
+            let message = if std::env::var_os("FLATPAK_ID").is_some() {
+                "JavaScript rendering requires Chrome/Chromium inside the Flatpak sandbox. Use a compatible packaged browser or disable rendering in Preferences."
+            } else {
+                "JavaScript rendering requires an installed Chrome/Chromium. Install it or disable rendering in Preferences."
+            };
+            return CrawlResult::new_failed(
+                url_str.into(),
+                None,
+                Some(message.into()),
+                "Rendering Failed".into(),
+                depth,
+                0,
+            );
         }
 
         // Fetch page

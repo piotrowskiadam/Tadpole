@@ -29,8 +29,13 @@ fn main() {
     let _guard = rt.enter();
 
     // 4. Initialize Libadwaita application
+    let flatpak_id = if std::path::Path::new("/.flatpak-info").exists() {
+        std::env::var("FLATPAK_ID").ok()
+    } else {
+        None
+    };
     let app = adw::Application::builder()
-        .application_id("com.tadpole.seo")
+        .application_id(tadpole::application_id(flatpak_id.as_deref()))
         .build();
 
     app.connect_activate(|app| {
