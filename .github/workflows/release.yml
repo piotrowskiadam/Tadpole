@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish_snap:
+        description: Publish the built Snap to the Snap Store stable channel
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -59,15 +64,16 @@ jobs:
       - name: Stage Linux artifacts
         run: |
           mkdir -p staging
-          cp target/debian/*.deb staging/ 2>/dev/null || true
-          cp target/generate-rpm/*.rpm staging/ 2>/dev/null || true
-          cp Tadpole-x86_64.AppImage staging/ 2>/dev/null || true
+          cp target/debian/*.deb staging/
+          cp target/generate-rpm/*.rpm staging/
+          cp Tadpole-x86_64.AppImage staging/
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tadpole-linux-packages
           path: staging/
+          if-no-files-found: error
 
   # Snap Build — uses official snapcore/action-build which sets up LXD automatically
   # This is the canonical way to build snaps in CI (no --destructive-mode, no permission issues)
@@ -92,6 +98,7 @@ jobs:
         with:
           name: tadpole-snap
           path: "*.snap"
+          if-no-files-found: error
 
   # Windows Builds: Zip, Exe Installer
   build-windows:
@@ -199,14 +206,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
-          cp dist/tadpole-windows.zip staging/ 2>/dev/null || true
-          cp dist/TadpoleSetup.exe staging/ 2>/dev/null || true
+          cp dist/tadpole-windows.zip staging/
+          cp dist/TadpoleSetup.exe staging/
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tadpole-windows-packages
           path: staging/
+          if-no-files-found: error
 
   # Create Release and Publish Assets
   create-release:
@@ -240,6 +248,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -247,7 +257,7 @@ jobs:
     name: Publish Snap to Snap Store
     needs: build-snap
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_snap
     steps:
       - name: Download Snap Artifact
         uses: actions/download-artifact@v8

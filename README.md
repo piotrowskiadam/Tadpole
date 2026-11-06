@@ -6,6 +6,12 @@ A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a websit
 
 [Downloads](https://github.com/piotrowskiadam/Tadpole/releases) · [Issue tracker](https://github.com/piotrowskiadam/Tadpole/issues) · [Developer guide](docs/DEVELOPMENT.md) · [Architecture](ARCHITECTURE.md) · [Modernization audit](docs/AUDIT.md)
 
+<p align="center">
+  <a href="https://snapcraft.io/tadpole">
+    <img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store" width="156" height="48">
+  </a>
+</p>
+
 ## Website audits
 
 - Crawl a site, a path, one URL, or an explicit list of URLs.
@@ -59,7 +65,7 @@ Optional JavaScript rendering needs an installed Chrome/Chromium discoverable by
 
 ## Packages
 
-Release workflows run on version tags and build Linux DEB/RPM/AppImage/Snap and Windows ZIP/Inno Setup installers. Package availability depends on successful release jobs; see the actual [release assets](https://github.com/piotrowskiadam/Tadpole/releases).
+Release workflows run on version tags and build Linux DEB/RPM/AppImage/Snap and Windows ZIP/Inno Setup installers. The Snap Store is updated separately by an explicitly requested workflow run. Package availability depends on successful release jobs; see the actual [release assets](https://github.com/piotrowskiadam/Tadpole/releases).
 
 - Linux: `cargo build --release --locked`, then `cargo deb`, `cargo generate-rpm`, `./build_appimage.sh`, or `snapcraft` as appropriate.
 - Windows: install MSYS2 and Inno Setup, then run `build_windows.ps1` from the repository directory.
