@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.tadpole.seo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Tadpole</name>
+  <summary>Audit websites and explore their internal links</summary>
+  <description>
+    <p>Tadpole is a desktop SEO crawler for inspecting website structure, metadata, indexability and internal links.</p>
+    <p>Explore crawled pages using directory, link and rank visualizations, and export audit data. Optional AI metadata suggestions require your own provider API key.</p>
+  </description>
+  <developer id="com.tadpole"><name>Adam Piotrowski</name></developer>
+  <url type="homepage">https://github.com/piotrowskiadam/Tadpole</url>
+  <url type="bugtracker">https://github.com/piotrowskiadam/Tadpole/issues</url>
+  <launchable type="desktop-id">com.tadpole.seo.desktop</launchable>
+  <content_rating type="oars-1.1" />
+</component>

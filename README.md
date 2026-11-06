@@ -65,9 +65,10 @@ Optional JavaScript rendering needs an installed Chrome/Chromium discoverable by
 
 ## Packages
 
-Release workflows run on version tags and build Linux DEB/RPM/AppImage/Snap and Windows ZIP/Inno Setup installers. The Snap Store is updated separately by an explicitly requested workflow run. Package availability depends on successful release jobs; see the actual [release assets](https://github.com/piotrowskiadam/Tadpole/releases).
+Release workflows run on version tags and build Linux DEB/RPM/AppImage/Snap/Flatpak and Windows ZIP/Inno Setup installers. The Snap Store is updated separately by an explicitly requested workflow run. Package availability depends on successful release jobs; see the actual [release assets](https://github.com/piotrowskiadam/Tadpole/releases).
 
 - Linux: `cargo build --release --locked`, then `cargo deb`, `cargo generate-rpm`, `./build_appimage.sh`, or `snapcraft` as appropriate.
+- Flatpak: run `scripts/build-flatpak.sh`; install the resulting `dist/tadpole.flatpak` with `flatpak install --user dist/tadpole.flatpak`. See [Flatpak build documentation](docs/FLATPAK.md).
 - Windows: install MSYS2 and Inno Setup, then run `build_windows.ps1` from the repository directory.
 - The current AppImage script packages the application and icon; it **does not bundle GTK/Libadwaita**, so it requires compatible host libraries.
 

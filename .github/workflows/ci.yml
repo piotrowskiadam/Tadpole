@@ -28,3 +28,24 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked
+
+  flatpak:
+    name: Flatpak package
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Configure user Flatpak remote
+        run: flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build Flatpak bundle
+        run: scripts/build-flatpak.sh "$GITHUB_WORKSPACE/dist/tadpole-x86_64.flatpak"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tadpole-flatpak-x86_64
+          path: dist/tadpole-x86_64.flatpak
+          if-no-files-found: error
+          retention-days: 14
