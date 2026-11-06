@@ -24,7 +24,9 @@ modules:
       - cargo build --release --locked --offline
       - install -Dm755 target/release/tadpole /app/bin/tadpole
       - install -Dm644 snap/gui/com.tadpole.seo.desktop /app/share/applications/com.tadpole.seo.desktop
-      - install -Dm644 tadpolelogonobg.png /app/share/icons/hicolor/512x512/apps/com.tadpole.seo.png
+      - cc flatpak/scale-icon.c -o /tmp/tadpole-scale-icon $(pkg-config --cflags --libs gdk-pixbuf-2.0)
+      - install -d /app/share/icons/hicolor/512x512/apps
+      - /tmp/tadpole-scale-icon tadpolelogonobg.png /app/share/icons/hicolor/512x512/apps/com.tadpole.seo.png
       - install -Dm644 flatpak/com.tadpole.seo.metainfo.xml /app/share/metainfo/com.tadpole.seo.metainfo.xml
       - install -Dm644 LICENSE /app/share/licenses/com.tadpole.seo/LICENSE
     sources:

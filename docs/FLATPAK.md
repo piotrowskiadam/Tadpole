@@ -1,6 +1,6 @@
 # Upstream Flatpak builds
 
-Tadpole publishes its own Flatpak bundle as a GitHub Actions artifact for changes to `main` and `codex/**` branches and for pull requests. Future version-tag releases also include the bundle alongside the other packages. The CI artifact is retained for 14 days; release assets are retained with the release. This is an x86_64 build; other architectures have not been validated.
+Tadpole publishes its own Flatpak bundle as a GitHub Actions artifact for pushes to any branch and for pull requests. Future version-tag releases also include the bundle alongside the other packages. The CI artifact is retained for 14 days; release assets are retained with the release. This is an x86_64 build; other architectures have not been validated.
 
 The upstream Flatpak manifest and build script were created with AI assistance. **They are for this project's GitHub distribution only and must not be copied or reused as a Flathub submission manifest.** Flathub's [AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) prohibits AI-generated or AI-assisted manifest content. Flathub submission remains a separate human-owned process; see [the readiness audit](FLATHUB_READINESS.md).
 
