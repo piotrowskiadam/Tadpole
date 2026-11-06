@@ -103,10 +103,20 @@ impl SnapshotBuilder {
     }
 
     pub fn build_from_results(results: &[CrawlResult]) -> GraphSnapshot {
+        Self::build_from_results_cancellable(results, &|| false).unwrap()
+    }
+
+    pub fn build_from_results_cancellable(
+        results: &[CrawlResult],
+        cancelled: &impl Fn() -> bool,
+    ) -> Option<GraphSnapshot> {
         let mut builder = SnapshotBuilder::new();
 
         // Pass 1: Assign Node IDs and collect nodes
-        for res in results {
+        for (i, res) in results.iter().enumerate() {
+            if i % 256 == 0 && cancelled() {
+                return None;
+            }
             if builder.url_to_node_id.contains_key(&res.url) {
                 continue;
             }
@@ -176,9 +186,15 @@ impl SnapshotBuilder {
         // Pass 2: Aggregate Edges (Source -> Target)
         let mut edge_counts: HashMap<(NodeId, NodeId), u16> = HashMap::new();
 
-        for res in results {
+        for (i, res) in results.iter().enumerate() {
+            if i % 256 == 0 && cancelled() {
+                return None;
+            }
             if let Some(&src_id) = builder.url_to_node_id.get(&res.url) {
-                for outlink in &res.outlinks {
+                for (i, outlink) in res.outlinks.iter().enumerate() {
+                    if i % 2048 == 0 && cancelled() {
+                        return None;
+                    }
                     if let Some(&tgt_id) = builder.url_to_node_id.get(outlink) {
                         let count = edge_counts.entry((src_id, tgt_id)).or_insert(0);
                         *count = count.saturating_add(1);
@@ -335,7 +351,7 @@ impl SnapshotBuilder {
         // Calculate Weakly Connected Components count
         metrics.weakly_connected_components = calculate_wcc_count(num_nodes, &site_edges);
 
-        GraphSnapshot {
+        Some(GraphSnapshot {
             nodes: site_nodes.into(),
             edges: site_edges.into(),
             outgoing_offsets: outgoing_offsets.into(),
@@ -345,7 +361,7 @@ impl SnapshotBuilder {
             sections: builder.sections.into(),
             strings: Arc::new(builder.strings),
             metrics,
-        }
+        })
     }
 }
 

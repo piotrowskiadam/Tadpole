@@ -1,0 +1,172 @@
+{
+  "observations": [
+    {
+      "clone_ms": 1.7512940000000001,
+      "edges": 7993,
+      "fixture_generation_ms": 3.703768,
+      "icicle_ms": 4.2265749999999995,
+      "pages": 1000,
+      "rank_ms": 0.854842,
+      "shape": "bucketed",
+      "snapshot_ms": 7.192456,
+      "trial": 1
+    },
+    {
+      "clone_ms": 0.839215,
+      "edges": 7993,
+      "fixture_generation_ms": 3.703768,
+      "icicle_ms": 2.898148,
+      "pages": 1000,
+      "rank_ms": 0.7208,
+      "shape": "bucketed",
+      "snapshot_ms": 6.473858,
+      "trial": 2
+    },
+    {
+      "clone_ms": 0.825645,
+      "edges": 7993,
+      "fixture_generation_ms": 3.703768,
+      "icicle_ms": 5.208013,
+      "pages": 1000,
+      "rank_ms": 1.23633,
+      "shape": "bucketed",
+      "snapshot_ms": 7.657803,
+      "trial": 3
+    },
+    {
+      "clone_ms": 28.089824,
+      "edges": 79993,
+      "fixture_generation_ms": 51.424258,
+      "icicle_ms": 33.189285,
+      "pages": 10000,
+      "rank_ms": 11.566743,
+      "shape": "bucketed",
+      "snapshot_ms": 91.97368999999999,
+      "trial": 1
+    },
+    {
+      "clone_ms": 9.601325000000001,
+      "edges": 79993,
+      "fixture_generation_ms": 51.424258,
+      "icicle_ms": 24.784841,
+      "pages": 10000,
+      "rank_ms": 6.620335,
+      "shape": "bucketed",
+      "snapshot_ms": 67.76924600000001,
+      "trial": 2
+    },
+    {
+      "clone_ms": 7.8987050000000005,
+      "edges": 79993,
+      "fixture_generation_ms": 51.424258,
+      "icicle_ms": 23.259466999999997,
+      "pages": 10000,
+      "rank_ms": 6.749352999999999,
+      "shape": "bucketed",
+      "snapshot_ms": 59.14173,
+      "trial": 3
+    },
+    {
+      "clone_ms": 189.693889,
+      "edges": 799993,
+      "fixture_generation_ms": 395.785818,
+      "icicle_ms": 259.640779,
+      "pages": 100000,
+      "rank_ms": 147.776701,
+      "shape": "bucketed",
+      "snapshot_ms": 973.081421,
+      "trial": 1
+    },
+    {
+      "clone_ms": 89.832068,
+      "edges": 799993,
+      "fixture_generation_ms": 395.785818,
+      "icicle_ms": 343.508931,
+      "pages": 100000,
+      "rank_ms": 197.20515699999999,
+      "shape": "bucketed",
+      "snapshot_ms": 1079.750658,
+      "trial": 2
+    },
+    {
+      "clone_ms": 93.44675099999999,
+      "edges": 799993,
+      "fixture_generation_ms": 395.785818,
+      "icicle_ms": 254.64351699999997,
+      "pages": 100000,
+      "rank_ms": 164.920242,
+      "shape": "bucketed",
+      "snapshot_ms": 812.763501,
+      "trial": 3
+    },
+    {
+      "clone_ms": 8.080051,
+      "edges": 79993,
+      "fixture_generation_ms": 15.266964,
+      "icicle_ms": 27.910028999999998,
+      "pages": 10000,
+      "rank_ms": 9.542971000000001,
+      "shape": "wide",
+      "snapshot_ms": 61.88931,
+      "trial": 1
+    },
+    {
+      "clone_ms": 9.947799,
+      "edges": 79993,
+      "fixture_generation_ms": 15.266964,
+      "icicle_ms": 24.057724999999998,
+      "pages": 10000,
+      "rank_ms": 8.191677,
+      "shape": "wide",
+      "snapshot_ms": 57.650938,
+      "trial": 2
+    },
+    {
+      "clone_ms": 10.758768,
+      "edges": 79993,
+      "fixture_generation_ms": 15.266964,
+      "icicle_ms": 25.400977,
+      "pages": 10000,
+      "rank_ms": 9.201344,
+      "shape": "wide",
+      "snapshot_ms": 60.521677000000004,
+      "trial": 3
+    },
+    {
+      "clone_ms": 22.389207000000003,
+      "edges": 199993,
+      "fixture_generation_ms": 29.064764,
+      "icicle_ms": 65.022591,
+      "pages": 25000,
+      "rank_ms": 25.473691,
+      "shape": "wide",
+      "snapshot_ms": 154.870754,
+      "trial": 1
+    },
+    {
+      "clone_ms": 19.187092999999997,
+      "edges": 199993,
+      "fixture_generation_ms": 29.064764,
+      "icicle_ms": 61.882901,
+      "pages": 25000,
+      "rank_ms": 27.283584,
+      "shape": "wide",
+      "snapshot_ms": 146.60656699999998,
+      "trial": 2
+    },
+    {
+      "clone_ms": 19.493187,
+      "edges": 199993,
+      "fixture_generation_ms": 29.064764,
+      "icicle_ms": 78.846554,
+      "pages": 25000,
+      "rank_ms": 29.523384999999998,
+      "shape": "wide",
+      "snapshot_ms": 189.420373,
+      "trial": 3
+    }
+  ],
+  "profile": "release",
+  "schema_version": 1,
+  "scope": "CPU phases only; no GTK, paint, hit testing, disk IO or content bodies; destruction excluded"
+}

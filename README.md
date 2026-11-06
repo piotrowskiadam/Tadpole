@@ -14,14 +14,14 @@ A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a websit
 - Search and filter results; export the filtered table to CSV or copy it to a spreadsheet.
 - Inspect Markdown extracted from the main page content and export it to files with collision-resistant names.
 - Find internal-link opportunities and recurring phrases in titles/headings.
-- Explore URL directory structure in the native Cairo icicle visualizer.
+- Explore directory treemaps and icicles, link-depth trees, URL neighborhoods, section-link matrices, and depth/rank plots in the native visualizer.
 - Save and reopen `.seocrawl` projects. API credentials are excluded from these files.
 
 SEO health is a local heuristic, not a Google score. Schema diagnostics check syntax and selected fields; they do not certify rich-result eligibility. A crawl cannot discover truly orphaned pages that have no links from the seed; provide those URLs in List mode.
 
 ## Visualization design study
 
-[View the native-style HTML/SVG concepts](docs/visualization/index.html), [design and loading plan](docs/visualization/design.md), and [first-party SEO tool research](docs/research/seo-visualizations.md). These are proposals for directory, link-depth, URL-neighborhood, section-matrix and depth/rank views. The [release CPU baseline](VISUALIZATION_BENCHMARKS.md) identifies current loading costs; proposed views and performance targets are not shipped behavior.
+[View the native-style HTML/SVG concepts](docs/visualization/index.html), [design and loading plan](docs/visualization/design.md), and [first-party SEO tool research](docs/research/seo-visualizations.md). The implementation provides the five views and retains the icicle. The [release CPU baseline](VISUALIZATION_BENCHMARKS.md) records the earlier measured bottleneck; performance targets remain goals.
 
 ## Optional AI metadata suggestions
 

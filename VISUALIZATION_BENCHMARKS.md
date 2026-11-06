@@ -23,6 +23,6 @@ cargo build --release --locked --no-default-features --example visualization_ben
 /usr/bin/time -v target/release/examples/visualization_benchmark > /tmp/tadpole-baseline.json
 ```
 
-Three-trial median icicle rebuilds were 16.05 ms for a bucketed 10k-URL hierarchy, 548.17 ms for 10k URLs in one folder, and 6,035.52 ms for 25k URLs in one folder on the recorded i7-8550U machine. These expose the child-search/layout risk; they do not measure GTK FPS or establish a latency guarantee. The current draw and input handlers rebuild that tree repeatedly. Indexed construction, prepared geometry and cached hit testing are proposed remedies, not implemented speedups in this design change.
+Three-trial median icicle rebuilds were 16.05 ms for a bucketed 10k-URL hierarchy, 548.17 ms for 10k URLs in one folder, and 6,035.52 ms for 25k URLs in one folder on the recorded i7-8550U machine. These expose the child-search/layout risk; they do not measure GTK FPS or establish a latency guarantee. The visualizer now uses indexed directory construction, prepared geometry and cached hit testing. On the same host, a later three-run median for the 25k wide fixture was 65.02 ms ([raw results](docs/visualization/after.json)). These measurements cover CPU phases only, not UI latency.
 
 The full timed process peaked at 468,660 KiB RSS; this is not incremental visualization memory. Fixtures omit content bodies and several real-crawl metadata fields. The report states excluded phases and sampling limits. Keep the withdrawn historical figures above withdrawn.

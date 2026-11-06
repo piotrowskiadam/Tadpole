@@ -75,7 +75,7 @@ pub fn export_subgraph_json(snapshot: &GraphSnapshot, selected_node_id: Option<N
     let nodes_to_export: Vec<_> = if let Some(sel) = selected_node_id {
         let mut ids = vec![sel];
         let outgoing = snapshot.get_outgoing_neighbors(sel);
-        ids.extend_from_slice(outgoing);
+        ids.extend(outgoing.iter().copied().filter(|&id| id != sel));
         ids
     } else {
         (0..snapshot.nodes.len() as u32).collect()

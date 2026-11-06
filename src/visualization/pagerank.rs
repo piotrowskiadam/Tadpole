@@ -24,6 +24,14 @@ impl Default for PageRankConfig {
 /// Crawl snapshots currently mark all parsed edges Follow; the flag is honored for
 /// callers that supply enriched snapshots with real rel attributes.
 pub fn calculate_internal_rank(snapshot: &GraphSnapshot, config: &PageRankConfig) -> Vec<f32> {
+    calculate_internal_rank_cancellable(snapshot, config, &|| false).unwrap()
+}
+
+pub fn calculate_internal_rank_cancellable(
+    snapshot: &GraphSnapshot,
+    config: &PageRankConfig,
+    cancelled: &impl Fn() -> bool,
+) -> Option<Vec<f32>> {
     let count = snapshot.nodes.len();
     let active: Vec<_> = snapshot
         .nodes
@@ -32,10 +40,13 @@ pub fn calculate_internal_rank(snapshot: &GraphSnapshot, config: &PageRankConfig
         .collect();
     let active_count = active.iter().filter(|&&value| value).count();
     if active_count == 0 {
-        return vec![0.0; count];
+        return Some(vec![0.0; count]);
     }
     let mut adjacency = vec![Vec::new(); count];
-    for edge in snapshot.edges.iter() {
+    for (i, edge) in snapshot.edges.iter().enumerate() {
+        if i % 2048 == 0 && cancelled() {
+            return None;
+        }
         let source = edge.source as usize;
         let target = edge.target as usize;
         if source < count
@@ -59,6 +70,9 @@ pub fn calculate_internal_rank(snapshot: &GraphSnapshot, config: &PageRankConfig
         0.85
     };
     for _ in 0..config.max_iterations {
+        if cancelled() {
+            return None;
+        }
         let dangling: f32 = ranks
             .iter()
             .enumerate()
@@ -91,5 +105,5 @@ pub fn calculate_internal_rank(snapshot: &GraphSnapshot, config: &PageRankConfig
             *rank /= sum;
         }
     }
-    ranks
+    Some(ranks)
 }

@@ -1,6 +1,6 @@
 # Visualization design and loading plan
 
-Status: **proposed**, 2026-11-01. [Open the self-contained design study](index.html). This change supplies research, six diagrams and a CPU benchmark harness; implementation of the proposed views and loading model is a subsequent step.
+Status: **implemented**, based on the 2026-11-01 design. [Open the self-contained design study](index.html). The native application now includes the five views, an icicle, and background preparation. The design below records the approved direction and provisional performance targets.
 
 ## Evidence and recommendation
 

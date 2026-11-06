@@ -525,6 +525,7 @@ impl MainWindow {
             let vis_win = crate::ui::site_visualizer::VisualizerWindow::new(
                 &parent_win_vis,
                 state_vis.clone(),
+                None,
             );
             let details_inner = details_vis.clone();
             let state_inner = state_vis.clone();

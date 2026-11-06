@@ -351,6 +351,35 @@ impl CrawlState {
         self.inner.read().urls.values().cloned().collect()
     }
 
+    /// Compact projection for graph analysis. Called on a worker; content bodies,
+    /// images and schema payloads never enter the visualization pipeline.
+    pub fn visualization_results(&self) -> Vec<CrawlResult> {
+        self.inner
+            .read()
+            .urls
+            .values()
+            .map(|r| {
+                let mut p = CrawlResult::new_failed(
+                    r.url.clone(),
+                    r.status_code,
+                    None,
+                    r.indexability_status.clone(),
+                    r.depth,
+                    r.response_time_ms,
+                );
+                p.indexable = r.indexable;
+                p.title = r.title.as_ref().map(|_| String::new());
+                p.meta_desc = r.meta_desc.as_ref().map(|_| String::new());
+                p.h1_count = r.h1_count;
+                p.canonical = r.canonical.clone();
+                p.size_bytes = r.size_bytes;
+                p.word_count = r.word_count;
+                p.outlinks = r.outlinks.clone();
+                p
+            })
+            .collect()
+    }
+
     pub fn get_config(&self) -> CrawlConfig {
         self.inner.read().config.clone()
     }

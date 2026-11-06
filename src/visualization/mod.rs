@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod cache;
+pub mod explorer;
 pub mod export;
 pub mod filters;
 pub mod icicle;
