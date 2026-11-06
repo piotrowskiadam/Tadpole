@@ -31,7 +31,8 @@ echo "=== Building Tadpole in Release mode ==="
 # Ensure compile env variables are set
 export PKG_CONFIG_PATH="/clang64/lib/pkgconfig"
 export PKG_CONFIG_ALLOW_CROSS=1
-export CC=clang CXX=clang++ CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=clang
+export CC_x86_64_pc_windows_gnullvm=clang CXX_x86_64_pc_windows_gnullvm=clang++
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=clang
 cargo build --release --locked --target x86_64-pc-windows-gnullvm
 
 echo "=== Creating distribution package ==="

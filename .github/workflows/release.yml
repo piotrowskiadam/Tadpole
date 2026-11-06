@@ -136,8 +136,8 @@ jobs:
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
           PKG_CONFIG_PATH: /clang64/lib/pkgconfig
-          CC: clang
-          CXX: clang++
+          CC_x86_64_pc_windows_gnullvm: clang
+          CXX_x86_64_pc_windows_gnullvm: clang++
           CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER: clang
         run: |
           echo "=== Building Tadpole in Release mode ==="
