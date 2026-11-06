@@ -14,7 +14,9 @@ if (-not (Test-Path $bashExe)) {
 
 Write-Host "=== Starting Tadpole Windows Build via MSYS2 ===" -ForegroundColor Green
 
-# Invoke the bash script with MSYS2 environment (login shell so paths are set up)
+# Invoke the bash script in MSYS2 CLANG64.
+$env:MSYSTEM = "CLANG64"
+$env:CHERE_INVOKING = "1"
 $proc = Start-Process -FilePath $bashExe -ArgumentList "-lc", "'./build_windows.sh'" -NoNewWindow -PassThru -Wait
 
 if ($proc.ExitCode -ne 0) {

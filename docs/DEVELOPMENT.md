@@ -42,7 +42,7 @@ Manual release checklist:
 
 - `build_appimage.sh` stages the binary/desktop file/icon. It currently requires host GTK/Libadwaita; it is not a fully self-contained runtime bundle.
 - Snap uses the GNOME extension and core24 base. Chromium discovery and sandbox permissions must be tested separately; Chrome is not bundled.
-- Windows packaging uses MSYS2 MinGW64 and Inno Setup. Verify loader DLLs, schemas, icons and launcher behavior on a real Windows installation.
+- Windows packaging uses MSYS2 CLANG64, the Rust gnullvm target and Inno Setup. Verify loader DLLs, schemas, icons and launcher behavior on a real Windows installation.
 - Keep Cargo.toml, snap version and installer AppVersion aligned when preparing a release. No package release is implied by a development PR.
 
 ## Operational limits and next steps
