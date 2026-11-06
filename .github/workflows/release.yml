@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish_snap:
+        description: Publish the built Snap to the Snap Store stable channel
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,7 +40,7 @@ jobs:
 
       # Build standard release binary for deb/rpm/AppImage
       - name: Build Rust binary
-        run: cargo build --release
+        run: cargo build --release --locked
 
       # Install cargo-binstall and packaging tools
       - name: Install cargo packaging tools
@@ -59,15 +64,16 @@ jobs:
       - name: Stage Linux artifacts
         run: |
           mkdir -p staging
-          cp target/debian/*.deb staging/ 2>/dev/null || true
-          cp target/generate-rpm/*.rpm staging/ 2>/dev/null || true
-          cp Tadpole-x86_64.AppImage staging/ 2>/dev/null || true
+          cp target/debian/*.deb staging/
+          cp target/generate-rpm/*.rpm staging/
+          cp Tadpole-x86_64.AppImage staging/
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tadpole-linux-packages
           path: staging/
+          if-no-files-found: error
 
   # Snap Build — uses official snapcore/action-build which sets up LXD automatically
   # This is the canonical way to build snaps in CI (no --destructive-mode, no permission issues)
@@ -92,6 +98,7 @@ jobs:
         with:
           name: tadpole-snap
           path: "*.snap"
+          if-no-files-found: error
 
   # Windows Builds: Zip, Exe Installer
   build-windows:
@@ -104,18 +111,17 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: CLANG64
           update: true
           path-type: inherit
           install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-gtk4
-            mingw-w64-x86_64-libadwaita
-            mingw-w64-x86_64-pkg-config
-            mingw-w64-x86_64-vulkan-loader
-            mingw-w64-x86_64-librsvg
-            mingw-w64-x86_64-adwaita-icon-theme
-            mingw-w64-x86_64-hicolor-icon-theme
+            mingw-w64-clang-x86_64-toolchain
+            mingw-w64-clang-x86_64-gtk4
+            mingw-w64-clang-x86_64-libadwaita
+            mingw-w64-clang-x86_64-vulkan-loader
+            mingw-w64-clang-x86_64-librsvg
+            mingw-w64-clang-x86_64-adwaita-icon-theme
+            mingw-w64-clang-x86_64-hicolor-icon-theme
             zip
 
 
@@ -123,60 +129,63 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          target: x86_64-pc-windows-gnu
+          target: x86_64-pc-windows-gnullvm
 
       - name: Compile and Package
         shell: msys2 {0}
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
-          PKG_CONFIG_PATH: /mingw64/lib/pkgconfig
+          PKG_CONFIG_PATH: /clang64/lib/pkgconfig
+          CC_x86_64_pc_windows_gnullvm: clang
+          CXX_x86_64_pc_windows_gnullvm: clang++
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER: clang
         run: |
           echo "=== Building Tadpole in Release mode ==="
-          cargo build --release --target x86_64-pc-windows-gnu
+          cargo build --release --locked --target x86_64-pc-windows-gnullvm
 
           echo "=== Creating distribution package ==="
           DIST_DIR="dist/tadpole-windows"
           rm -rf dist
           mkdir -p "$DIST_DIR"
 
-          cp target/x86_64-pc-windows-gnu/release/tadpole.exe "$DIST_DIR/"
+          cp target/x86_64-pc-windows-gnullvm/release/tadpole.exe "$DIST_DIR/"
           cp tadpolelogo.png "$DIST_DIR/"
           cp tadpolelogonobg.png "$DIST_DIR/"
 
           echo "=== Resolving and copying DLL dependencies ==="
-          dependencies=$(ldd target/x86_64-pc-windows-gnu/release/tadpole.exe | grep /mingw64/bin | awk '{print $3}')
+          dependencies=$(ldd target/x86_64-pc-windows-gnullvm/release/tadpole.exe | grep /clang64/bin | awk '{print $3}')
           for dll in $dependencies; do
               cp "$dll" "$DIST_DIR/"
           done
 
           echo "=== Copying Vulkan loader ==="
-          if [ -f "/mingw64/bin/vulkan-1.dll" ]; then
-              cp "/mingw64/bin/vulkan-1.dll" "$DIST_DIR/"
-          elif [ -f "/mingw64/bin/libvulkan-1.dll" ]; then
-              cp "/mingw64/bin/libvulkan-1.dll" "$DIST_DIR/vulkan-1.dll"
+          if [ -f "/clang64/bin/vulkan-1.dll" ]; then
+              cp "/clang64/bin/vulkan-1.dll" "$DIST_DIR/"
+          elif [ -f "/clang64/bin/libvulkan-1.dll" ]; then
+              cp "/clang64/bin/libvulkan-1.dll" "$DIST_DIR/vulkan-1.dll"
           fi
 
           echo "=== Copying GSettings schemas ==="
           SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
           mkdir -p "$SCHEMA_DIR"
-          cp /mingw64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
-          cp /mingw64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
+          cp /clang64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
+          cp /clang64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
 
           echo "=== Copying icon themes ==="
           mkdir -p "$DIST_DIR/share/icons/Adwaita"
-          cp /mingw64/share/icons/Adwaita/index.theme "$DIST_DIR/share/icons/Adwaita/"
-          cp -r /mingw64/share/icons/Adwaita/scalable "$DIST_DIR/share/icons/Adwaita/"
+          cp /clang64/share/icons/Adwaita/index.theme "$DIST_DIR/share/icons/Adwaita/"
+          cp -r /clang64/share/icons/Adwaita/scalable "$DIST_DIR/share/icons/Adwaita/"
           mkdir -p "$DIST_DIR/share/icons/hicolor"
-          cp /mingw64/share/icons/hicolor/index.theme "$DIST_DIR/share/icons/hicolor/"
-          cp -r /mingw64/share/icons/hicolor/scalable "$DIST_DIR/share/icons/hicolor/"
+          cp /clang64/share/icons/hicolor/index.theme "$DIST_DIR/share/icons/hicolor/"
+          cp -r /clang64/share/icons/hicolor/scalable "$DIST_DIR/share/icons/hicolor/"
 
           echo "=== Copying gdk-pixbuf loaders ==="
           mkdir -p "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders"
-          cp /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders/"
+          cp /clang64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders/"
           gdk-pixbuf-query-loaders | sed 's|[^"]*/lib/gdk-pixbuf-2.0/2.10.0/||g' > "$DIST_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
 
           echo "=== Resolving and copying loader DLL dependencies ==="
-          loader_deps=$(ldd /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /mingw64/bin | awk '{print $3}')
+          loader_deps=$(ldd /clang64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /clang64/bin | awk '{print $3}')
           for dll in $loader_deps; do
               cp -n "$dll" "$DIST_DIR/"
           done
@@ -199,14 +208,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
-          cp dist/tadpole-windows.zip staging/ 2>/dev/null || true
-          cp dist/TadpoleSetup.exe staging/ 2>/dev/null || true
+          cp dist/tadpole-windows.zip staging/
+          cp dist/TadpoleSetup.exe staging/
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v7
         with:
           name: tadpole-windows-packages
           path: staging/
+          if-no-files-found: error
 
   # Create Release and Publish Assets
   create-release:
@@ -215,6 +225,9 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v6
+
       - name: Download Linux Artifacts
         uses: actions/download-artifact@v8
         with:
@@ -240,6 +253,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -247,7 +262,7 @@ jobs:
     name: Publish Snap to Snap Store
     needs: build-snap
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_snap
     steps:
       - name: Download Snap Artifact
         uses: actions/download-artifact@v8

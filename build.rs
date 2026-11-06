@@ -5,14 +5,18 @@ fn main() {
 
         if target_env == "gnu" {
             // Find the GNU resource compiler tool
-            let windres = if std::process::Command::new("x86_64-w64-mingw32-windres").arg("--version").status().is_ok() {
+            let windres = if std::process::Command::new("x86_64-w64-mingw32-windres")
+                .arg("--version")
+                .status()
+                .is_ok()
+            {
                 "x86_64-w64-mingw32-windres"
             } else {
                 "windres"
             };
 
             let status = std::process::Command::new(windres)
-                .args(&["-i", "tadpole.rc", "-o"])
+                .args(["-i", "tadpole.rc", "-o"])
                 .arg(format!("{}/tadpole.o", out_dir))
                 .status()
                 .expect("Failed to execute windres");

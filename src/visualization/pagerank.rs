@@ -1,4 +1,4 @@
-use super::snapshot::GraphSnapshot;
+use super::snapshot::{FollowState, GraphSnapshot, Indexability};
 
 #[derive(Debug, Clone)]
 pub struct PageRankConfig {
@@ -8,7 +8,6 @@ pub struct PageRankConfig {
     pub exclude_nofollow: bool,
     pub exclude_non_indexable: bool,
 }
-
 impl Default for PageRankConfig {
     fn default() -> Self {
         Self {
@@ -21,92 +20,90 @@ impl Default for PageRankConfig {
     }
 }
 
-/// Calculate directed PageRank ("Internal Rank") score for every node in the graph snapshot.
+/// Directed, unweighted PageRank. Excluded nodes have zero rank; active ranks sum to one.
+/// Crawl snapshots currently mark all parsed edges Follow; the flag is honored for
+/// callers that supply enriched snapshots with real rel attributes.
 pub fn calculate_internal_rank(snapshot: &GraphSnapshot, config: &PageRankConfig) -> Vec<f32> {
-    let num_nodes = snapshot.nodes.len();
-    if num_nodes == 0 {
-        return Vec::new();
+    calculate_internal_rank_cancellable(snapshot, config, &|| false).unwrap()
+}
+
+pub fn calculate_internal_rank_cancellable(
+    snapshot: &GraphSnapshot,
+    config: &PageRankConfig,
+    cancelled: &impl Fn() -> bool,
+) -> Option<Vec<f32>> {
+    let count = snapshot.nodes.len();
+    let active: Vec<_> = snapshot
+        .nodes
+        .iter()
+        .map(|node| !config.exclude_non_indexable || node.indexability == Indexability::Indexable)
+        .collect();
+    let active_count = active.iter().filter(|&&value| value).count();
+    if active_count == 0 {
+        return Some(vec![0.0; count]);
     }
-
-    let n = num_nodes as f32;
-    let initial_rank = 1.0 / n;
-    let mut current_ranks = vec![initial_rank; num_nodes];
-    let mut next_ranks = vec![0.0f32; num_nodes];
-
-    // Compute out-degrees for PageRank calculation
-    let mut effective_out_degrees = vec![0u32; num_nodes];
-
-    for (node_id, node) in snapshot.nodes.iter().enumerate() {
-        if config.exclude_non_indexable && node.indexability != super::snapshot::Indexability::Indexable {
-            continue;
+    let mut adjacency = vec![Vec::new(); count];
+    for (i, edge) in snapshot.edges.iter().enumerate() {
+        if i % 2048 == 0 && cancelled() {
+            return None;
         }
-
-        let neighbors = snapshot.get_outgoing_neighbors(node_id as u32);
-        let mut count = 0u32;
-        for &target_id in neighbors {
-            let target_node = &snapshot.nodes[target_id as usize];
-            if config.exclude_non_indexable && target_node.indexability != super::snapshot::Indexability::Indexable {
-                continue;
-            }
-            count += 1;
+        let source = edge.source as usize;
+        let target = edge.target as usize;
+        if source < count
+            && target < count
+            && active[source]
+            && active[target]
+            && (!config.exclude_nofollow || edge.follow_state == FollowState::Follow)
+        {
+            adjacency[source].push(target);
         }
-        effective_out_degrees[node_id] = count;
     }
-
-    let d = config.damping_factor;
-    let base_rank = (1.0 - d) / n;
-
-    for _iter in 0..config.max_iterations {
-        // Step 1: Calculate total rank accumulated from dangling nodes (out-degree = 0)
-        let mut dangling_sum = 0.0f32;
-        for i in 0..num_nodes {
-            if effective_out_degrees[i] == 0 {
-                dangling_sum += current_ranks[i];
+    let n = active_count as f32;
+    let mut ranks: Vec<f32> = active
+        .iter()
+        .map(|&a| if a { 1.0 / n } else { 0.0 })
+        .collect();
+    let mut next = vec![0.0; count];
+    let damping = if config.damping_factor.is_finite() {
+        config.damping_factor.clamp(0.0, 1.0)
+    } else {
+        0.85
+    };
+    for _ in 0..config.max_iterations {
+        if cancelled() {
+            return None;
+        }
+        let dangling: f32 = ranks
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| active[*i] && adjacency[*i].is_empty())
+            .map(|(_, rank)| rank)
+            .sum();
+        let base = (1.0 - damping + damping * dangling) / n;
+        for (i, value) in next.iter_mut().enumerate() {
+            *value = if active[i] { base } else { 0.0 };
+        }
+        for (source, neighbors) in adjacency
+            .iter()
+            .enumerate()
+            .filter(|(_, neighbors)| !neighbors.is_empty())
+        {
+            let share = damping * ranks[source] / neighbors.len() as f32;
+            for &target in neighbors {
+                next[target] += share;
             }
         }
-        let dangling_contribution = d * (dangling_sum / n);
-
-        // Step 2: Distribute rank to incoming target nodes
-        for i in 0..num_nodes {
-            next_ranks[i] = base_rank + dangling_contribution;
-        }
-
-        for src_id in 0..num_nodes {
-            let out_deg = effective_out_degrees[src_id];
-            if out_deg > 0 {
-                let share = d * (current_ranks[src_id] / out_deg as f32);
-                let neighbors = snapshot.get_outgoing_neighbors(src_id as u32);
-
-                for &tgt_id in neighbors {
-                    let tgt_idx = tgt_id as usize;
-                    if config.exclude_non_indexable && snapshot.nodes[tgt_idx].indexability != super::snapshot::Indexability::Indexable {
-                        continue;
-                    }
-                    next_ranks[tgt_idx] += share;
-                }
-            }
-        }
-
-        // Step 3: Check convergence diff
-        let mut diff = 0.0f32;
-        for i in 0..num_nodes {
-            diff += (next_ranks[i] - current_ranks[i]).abs();
-        }
-
-        current_ranks.copy_from_slice(&next_ranks);
-
-        if diff < config.tolerance {
+        let difference: f32 = next.iter().zip(&ranks).map(|(a, b)| (a - b).abs()).sum();
+        std::mem::swap(&mut ranks, &mut next);
+        if difference < config.tolerance {
             break;
         }
     }
-
-    // Normalize rank so values sum to 1.0 (or match total node average)
-    let total_sum: f32 = current_ranks.iter().sum();
-    if total_sum > 0.0 {
-        for rank in &mut current_ranks {
-            *rank /= total_sum;
+    let sum: f32 = ranks.iter().sum();
+    if sum > 0.0 {
+        for rank in &mut ranks {
+            *rank /= sum;
         }
     }
-
-    current_ranks
+    Some(ranks)
 }

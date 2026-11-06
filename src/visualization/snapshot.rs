@@ -192,7 +192,10 @@ impl GraphSnapshot {
     }
 
     pub fn find_shortest_path_to_root(&self, target_id: NodeId) -> Vec<NodeId> {
-        if target_id == 0 || self.nodes.is_empty() {
+        if target_id as usize >= self.nodes.len() {
+            return Vec::new();
+        }
+        if target_id == 0 {
             return vec![target_id];
         }
 
@@ -235,4 +238,3 @@ impl GraphSnapshot {
         }
     }
 }
-

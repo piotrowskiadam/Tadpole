@@ -4,7 +4,11 @@ use super::snapshot::GraphSnapshot;
 
 pub trait VisualizationRenderer {
     fn render_link_map(&mut self, snapshot: &GraphSnapshot, layout: &LayoutResult);
-    fn render_structure_map(&mut self, icicle_root: &IcicleTreeNode, weight_metric: IcicleWeightMetric);
+    fn render_structure_map(
+        &mut self,
+        icicle_root: &IcicleTreeNode,
+        weight_metric: IcicleWeightMetric,
+    );
     fn set_selected_node(&mut self, node_id: Option<u32>);
     fn set_hovered_node(&mut self, node_id: Option<u32>);
     fn set_zoom(&mut self, zoom: f64);
@@ -43,7 +47,11 @@ impl VisualizationRenderer for CairoCanvasRenderer {
         // Cairo drawing logic executed via GTK DrawingArea callback
     }
 
-    fn render_structure_map(&mut self, _icicle_root: &IcicleTreeNode, _weight_metric: IcicleWeightMetric) {
+    fn render_structure_map(
+        &mut self,
+        _icicle_root: &IcicleTreeNode,
+        _weight_metric: IcicleWeightMetric,
+    ) {
         // Icicle plot Cairo rendering logic executed via GTK DrawingArea callback
     }
 

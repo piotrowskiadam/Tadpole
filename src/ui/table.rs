@@ -1,10 +1,10 @@
+use crate::state::CrawlResult;
+use crate::ui::row_data::CrawlRowData;
+use crate::ui::sidebar::CrawlFilter;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::state::CrawlResult;
-use crate::ui::row_data::CrawlRowData;
-use crate::ui::sidebar::CrawlFilter;
 
 pub struct Table {
     scrolled_window: gtk::ScrolledWindow,
@@ -14,6 +14,7 @@ pub struct Table {
     url_to_index: Rc<RefCell<HashMap<String, u32>>>,
     active_filter: Rc<RefCell<CrawlFilter>>,
     search_query: Rc<RefCell<String>>,
+    duplicates: Rc<RefCell<crate::filters::DuplicateIndex>>,
 }
 
 fn map_ordering(ord: std::cmp::Ordering) -> gtk::Ordering {
@@ -34,49 +35,47 @@ impl Table {
         let url_to_index = Rc::new(RefCell::new(HashMap::new()));
         let active_filter = Rc::new(RefCell::new(CrawlFilter::All));
         let search_query = Rc::new(RefCell::new(String::new()));
- 
+        let duplicates = Rc::new(RefCell::new(crate::filters::DuplicateIndex::default()));
+
         // Setup filter model
         let active_filter_clone = active_filter.clone();
         let search_query_clone = search_query.clone();
-        let list_store_clone = list_store.clone();
+        let duplicates_filter = duplicates.clone();
         let filter = gtk::CustomFilter::new(move |item| {
             let row_data = item.downcast_ref::<CrawlRowData>().unwrap();
             if let Some(res) = row_data.get_result() {
-                // To compute duplicate status, we need list of all results
-                let mut all_results = vec![];
-                let n = list_store_clone.n_items();
-                for i in 0..n {
-                    if let Some(obj) = list_store_clone.item(i) {
-                        if let Some(data) = obj.downcast_ref::<CrawlRowData>() {
-                            if let Some(r) = data.get_result() {
-                                all_results.push(r);
-                            }
-                        }
-                    }
-                }
-                
-                // 1. Sidebar filter check
-                if !active_filter_clone.borrow().matches(&res, &all_results) {
+                if !duplicates_filter
+                    .borrow()
+                    .matches(*active_filter_clone.borrow(), &res)
+                {
                     return false;
                 }
-                
+
                 // 2. Search query check
-                let query = search_query_clone.borrow().to_lowercase();
+                let query = search_query_clone.borrow();
                 if query.is_empty() {
                     return true;
                 }
-                
-                let url_match = res.url.to_lowercase().contains(&query);
-                let title_match = res.title.as_ref().map_or(false, |t| t.to_lowercase().contains(&query));
-                let desc_match = res.meta_desc.as_ref().map_or(false, |d| d.to_lowercase().contains(&query));
-                let status_match = res.status_code.map_or(false, |c| c.to_string().contains(&query));
-                
+
+                let url_match = res.url.to_lowercase().contains(query.as_str());
+                let title_match = res
+                    .title
+                    .as_ref()
+                    .map_or(false, |t| t.to_lowercase().contains(query.as_str()));
+                let desc_match = res
+                    .meta_desc
+                    .as_ref()
+                    .map_or(false, |d| d.to_lowercase().contains(query.as_str()));
+                let status_match = res
+                    .status_code
+                    .map_or(false, |c| c.to_string().contains(query.as_str()));
+
                 url_match || title_match || desc_match || status_match
             } else {
                 false
             }
         });
- 
+
         let filter_model = gtk::FilterListModel::new(Some(list_store.clone()), Some(filter));
 
         // Setup ColumnView first so we can use its built-in sorter
@@ -96,8 +95,18 @@ impl Table {
         let col_url = Self::create_text_column("Address", |res| res.url.clone());
         col_url.set_expand(true);
         let sort_url = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.url).unwrap_or_default();
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.url).unwrap_or_default();
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.url.clone())
+                .unwrap_or_default();
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.url.clone())
+                .unwrap_or_default();
             map_ordering(a_val.cmp(&b_val))
         });
         col_url.set_sorter(Some(&sort_url));
@@ -108,28 +117,60 @@ impl Table {
             res.status_code.map_or("Err".to_string(), |c| c.to_string())
         });
         let sort_status = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().and_then(|r| r.status_code).unwrap_or(0);
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().and_then(|r| r.status_code).unwrap_or(0);
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .and_then(|r| r.status_code)
+                .unwrap_or(0);
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .and_then(|r| r.status_code)
+                .unwrap_or(0);
             map_ordering(a_val.cmp(&b_val))
         });
         col_status.set_sorter(Some(&sort_status));
         column_view.append_column(&col_status);
 
         // Column 3: Indexability
-        let col_index = Self::create_text_column("Indexability", |res| res.indexability_status.clone());
+        let col_index =
+            Self::create_text_column("Indexability", |res| res.indexability_status.clone());
         let sort_index = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.indexability_status).unwrap_or_default();
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.indexability_status).unwrap_or_default();
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.indexability_status.clone())
+                .unwrap_or_default();
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.indexability_status.clone())
+                .unwrap_or_default();
             map_ordering(a_val.cmp(&b_val))
         });
         col_index.set_sorter(Some(&sort_index));
         column_view.append_column(&col_index);
 
         // Column 4: Title
-        let col_title = Self::create_text_column("Title", |res| res.title.clone().unwrap_or_default());
+        let col_title =
+            Self::create_text_column("Title", |res| res.title.clone().unwrap_or_default());
         let sort_title = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().and_then(|r| r.title).unwrap_or_default();
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().and_then(|r| r.title).unwrap_or_default();
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .and_then(|r| r.title.clone())
+                .unwrap_or_default();
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .and_then(|r| r.title.clone())
+                .unwrap_or_default();
             map_ordering(a_val.cmp(&b_val))
         });
         col_title.set_sorter(Some(&sort_title));
@@ -138,43 +179,86 @@ impl Table {
         // Column 5: Word Count
         let col_words = Self::create_text_column("Word Count", |res| res.word_count.to_string());
         let sort_words = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.word_count).unwrap_or(0);
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.word_count).unwrap_or(0);
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.word_count)
+                .unwrap_or(0);
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.word_count)
+                .unwrap_or(0);
             map_ordering(a_val.cmp(&b_val))
         });
         col_words.set_sorter(Some(&sort_words));
         column_view.append_column(&col_words);
 
         // Column 6: Size (Bytes)
-        let col_size = Self::create_text_column("Size (KB)", |res| format!("{:.2}", res.size_bytes as f64 / 1024.0));
+        let col_size = Self::create_text_column("Size (KB)", |res| {
+            format!("{:.2}", res.size_bytes as f64 / 1024.0)
+        });
         let sort_size = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.size_bytes).unwrap_or(0);
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.size_bytes).unwrap_or(0);
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.size_bytes)
+                .unwrap_or(0);
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.size_bytes)
+                .unwrap_or(0);
             map_ordering(a_val.cmp(&b_val))
         });
         col_size.set_sorter(Some(&sort_size));
         column_view.append_column(&col_size);
- 
+
         // Column 7: Depth
         let col_depth = Self::create_text_column("Depth", |res| res.depth.to_string());
         let sort_depth = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.depth).unwrap_or(0);
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.depth).unwrap_or(0);
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.depth)
+                .unwrap_or(0);
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.depth)
+                .unwrap_or(0);
             map_ordering(a_val.cmp(&b_val))
         });
         col_depth.set_sorter(Some(&sort_depth));
         column_view.append_column(&col_depth);
- 
+
         // Column 8: Response Time (ms)
-        let col_time = Self::create_text_column("Response Time (ms)", |res| res.response_time_ms.to_string());
+        let col_time =
+            Self::create_text_column("Response Time (ms)", |res| res.response_time_ms.to_string());
         let sort_time = gtk::CustomSorter::new(|a, b| {
-            let a_val = a.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.response_time_ms).unwrap_or(0);
-            let b_val = b.downcast_ref::<CrawlRowData>().unwrap().get_result().map(|r| r.response_time_ms).unwrap_or(0);
+            let a_val = a
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.response_time_ms)
+                .unwrap_or(0);
+            let b_val = b
+                .downcast_ref::<CrawlRowData>()
+                .unwrap()
+                .get_result()
+                .map(|r| r.response_time_ms)
+                .unwrap_or(0);
             map_ordering(a_val.cmp(&b_val))
         });
         col_time.set_sorter(Some(&sort_time));
         column_view.append_column(&col_time);
- 
+
         Self {
             scrolled_window,
             list_store,
@@ -183,6 +267,7 @@ impl Table {
             url_to_index,
             active_filter,
             search_query,
+            duplicates,
         }
     }
 
@@ -192,6 +277,15 @@ impl Table {
 
     pub fn add_or_update(&self, result: CrawlResult) {
         let mut index_map = self.url_to_index.borrow_mut();
+        if let Some(old) = index_map
+            .get(&result.url)
+            .and_then(|idx| self.list_store.item(*idx))
+            .and_then(|obj| obj.downcast::<CrawlRowData>().ok())
+            .and_then(|row| row.get_result())
+        {
+            self.duplicates.borrow_mut().remove(&old);
+        }
+        self.duplicates.borrow_mut().add(&result);
         if let Some(&idx) = index_map.get(&result.url) {
             if let Some(item) = self.list_store.item(idx) {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
@@ -211,13 +305,14 @@ impl Table {
     pub fn clear(&self) {
         self.list_store.remove_all();
         self.url_to_index.borrow_mut().clear();
+        *self.duplicates.borrow_mut() = Default::default();
     }
 
     pub fn set_filter(&self, filter: CrawlFilter) {
         *self.active_filter.borrow_mut() = filter;
         self.apply_combined_filter();
     }
- 
+
     pub fn get_active_filter(&self) -> CrawlFilter {
         *self.active_filter.borrow()
     }
@@ -233,10 +328,21 @@ impl Table {
         }
 
         let headers = [
-            "Address", "Status Code", "Indexability",
-            "Title", "Title Length", "Meta Description", "Meta Length",
-            "H1", "H1 Count", "H2", "H2 Count", "Word Count", "Canonical",
-            "Inlinks Count", "Outlinks Count"
+            "Address",
+            "Status Code",
+            "Indexability",
+            "Title",
+            "Title Length",
+            "Meta Description",
+            "Meta Length",
+            "H1",
+            "H1 Count",
+            "H2",
+            "H2 Count",
+            "Word Count",
+            "Canonical",
+            "Inlinks Count",
+            "Outlinks Count",
         ];
         let mut tsv = headers.join("\t");
         tsv.push('\n');
@@ -245,7 +351,8 @@ impl Table {
             if let Some(item) = self.filter_model.item(i) {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
                     if let Some(res) = row_data.get_result() {
-                        let clean = |s: &str| s.replace('\t', " ").replace("\r\n", " ").replace('\n', " ");
+                        let clean =
+                            |s: &str| s.replace('\t', " ").replace("\r\n", " ").replace('\n', " ");
                         let title = res.title.as_deref().map(clean).unwrap_or_default();
                         let title_len = title.chars().count().to_string();
                         let meta = res.meta_desc.as_deref().map(clean).unwrap_or_default();
@@ -256,7 +363,9 @@ impl Table {
 
                         let row = [
                             clean(&res.url),
-                            res.status_code.map(|c| c.to_string()).unwrap_or_else(|| "Err".to_string()),
+                            res.status_code
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "Err".to_string()),
                             clean(&res.indexability_status),
                             title,
                             title_len,
@@ -286,52 +395,14 @@ impl Table {
     }
 
     pub fn set_search_query(&self, query: &str) {
-        *self.search_query.borrow_mut() = query.trim().to_string();
+        *self.search_query.borrow_mut() = query.trim().to_lowercase();
         self.apply_combined_filter();
     }
- 
+
     fn apply_combined_filter(&self) {
-        let active_filter_clone = self.active_filter.clone();
-        let search_query_clone = self.search_query.clone();
-        let list_store_clone = self.list_store.clone();
-        
-        let custom_filter = gtk::CustomFilter::new(move |item| {
-            let row_data = item.downcast_ref::<CrawlRowData>().unwrap();
-            if let Some(res) = row_data.get_result() {
-                let mut all_results = vec![];
-                let n = list_store_clone.n_items();
-                for i in 0..n {
-                    if let Some(obj) = list_store_clone.item(i) {
-                        if let Some(data) = obj.downcast_ref::<CrawlRowData>() {
-                            if let Some(r) = data.get_result() {
-                                all_results.push(r);
-                            }
-                        }
-                    }
-                }
-                
-                // 1. Sidebar filter check
-                if !active_filter_clone.borrow().matches(&res, &all_results) {
-                    return false;
-                }
-                
-                // 2. Search query check
-                let query = search_query_clone.borrow().to_lowercase();
-                if query.is_empty() {
-                    return true;
-                }
-                
-                let url_match = res.url.to_lowercase().contains(&query);
-                let title_match = res.title.as_ref().map_or(false, |t| t.to_lowercase().contains(&query));
-                let desc_match = res.meta_desc.as_ref().map_or(false, |d| d.to_lowercase().contains(&query));
-                let status_match = res.status_code.map_or(false, |c| c.to_string().contains(&query));
-                
-                url_match || title_match || desc_match || status_match
-            } else {
-                false
-            }
-        });
-        self.filter_model.set_filter(Some(&custom_filter));
+        if let Some(filter) = self.filter_model.filter() {
+            filter.changed(gtk::FilterChange::Different);
+        }
     }
 
     #[allow(dead_code)]
@@ -342,7 +413,7 @@ impl Table {
         }
         if let Some(item) = self.selection_model.item(idx) {
             if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
-                return row_data.get_result().map(|r| r.url);
+                return row_data.get_result().map(|r| r.url.clone());
             }
         }
         None
@@ -364,80 +435,177 @@ impl Table {
         }
     }
 
-    pub fn export_to_csv(&self, filepath: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn export_to_csv(
+        &self,
+        filepath: &std::path::Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
         let mut file = std::fs::File::create(filepath)?;
         file.write_all(b"\xEF\xBB\xBF")?;
         let mut wtr = csv::Writer::from_writer(file);
-        
+
         // Headers matching details and containing Markdown details
         wtr.write_record(&[
-            "Address", "Status Code", "Error Message", "Indexable", "Indexability",
-            "Title", "Title Length", "Meta Description", "Meta Length",
-            "H1", "H1 Count", "H2", "H2 Count", "Word Count", "Size (Bytes)", "Canonical",
-            "Depth", "Response Time (ms)", "Inlinks", "Outlinks", "Images",
-            "OG Title", "OG Description", "OG Image", "OG URL", "OG Type",
-            "Twitter Title", "Twitter Description", "Twitter Image", "Twitter Card",
-            "Schema Errors", "Headings", "Markdown", "Schema"
+            "Address",
+            "Status Code",
+            "Error Message",
+            "Indexable",
+            "Indexability",
+            "Title",
+            "Title Length",
+            "Meta Description",
+            "Meta Length",
+            "H1",
+            "H1 Count",
+            "H2",
+            "H2 Count",
+            "Word Count",
+            "Size (Bytes)",
+            "Canonical",
+            "Depth",
+            "Response Time (ms)",
+            "Inlinks",
+            "Outlinks",
+            "Images",
+            "OG Title",
+            "OG Description",
+            "OG Image",
+            "OG URL",
+            "OG Type",
+            "Twitter Title",
+            "Twitter Description",
+            "Twitter Image",
+            "Twitter Card",
+            "Schema Errors",
+            "Headings",
+            "Markdown",
+            "Schema",
         ])?;
-        
+
         let n = self.filter_model.n_items();
         for i in 0..n {
             if let Some(item) = self.filter_model.item(i) {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
                     if let Some(res) = row_data.get_result() {
-                        let title_str = res.title.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
+                        let title_str = res
+                            .title
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
                         let title_len = title_str.chars().count().to_string();
-                        let meta_str = res.meta_desc.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
+                        let meta_str = res
+                            .meta_desc
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
                         let meta_len = meta_str.chars().count().to_string();
-                        
-                        let h1_str = res.h1.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let h2_str = res.h2.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let error_msg_str = res.error_message.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let canonical_str = res.canonical.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let og_title_str = res.og_title.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let og_desc_str = res.og_description.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let og_img_str = res.og_image.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let og_url_str = res.og_url.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let og_type_str = res.og_type.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let twitter_title_str = res.twitter_title.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let twitter_desc_str = res.twitter_description.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let twitter_img_str = res.twitter_image.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
-                        let twitter_card_str = res.twitter_card.clone().unwrap_or_default()
-                            .replace("\r\n", " ").replace('\n', " ");
 
-                        let headings_str = res.headings.iter()
+                        let h1_str = res
+                            .h1
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let h2_str = res
+                            .h2
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let error_msg_str = res
+                            .error_message
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let canonical_str = res
+                            .canonical
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let og_title_str = res
+                            .og_title
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let og_desc_str = res
+                            .og_description
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let og_img_str = res
+                            .og_image
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let og_url_str = res
+                            .og_url
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let og_type_str = res
+                            .og_type
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let twitter_title_str = res
+                            .twitter_title
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let twitter_desc_str = res
+                            .twitter_description
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let twitter_img_str = res
+                            .twitter_image
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+                        let twitter_card_str = res
+                            .twitter_card
+                            .clone()
+                            .unwrap_or_default()
+                            .replace("\r\n", " ")
+                            .replace('\n', " ");
+
+                        let headings_str = res
+                            .headings
+                            .iter()
                             .map(|h| {
                                 let cleaned_text = h.text.replace("\r\n", " ").replace('\n', " ");
                                 format!("H{}: {}", h.level, cleaned_text)
                             })
                             .collect::<Vec<String>>()
                             .join(" | ");
-                            
+
                         let schema_str = res.schema_json_ld.join("\r\n");
                         let schema_errors_str = res.schema_errors.join("\r\n");
-                        let markdown_str = res.markdown.clone().unwrap_or_default()
+                        let markdown_str = res
+                            .markdown
+                            .clone()
+                            .unwrap_or_default()
                             .replace("\r\n", "\n")
                             .replace('\n', "\r\n");
-                        
+
                         let inlinks_str = res.inlinks.join("\r\n");
                         let outlinks_str = res.outlinks.join("\r\n");
-                        
-                        let images_str = res.images.iter()
+
+                        let images_str = res
+                            .images
+                            .iter()
                             .map(|img| {
                                 if let Some(ref alt) = img.alt {
                                     let cleaned_alt = alt.replace("\r\n", " ").replace('\n', " ");
@@ -449,13 +617,12 @@ impl Table {
                             .collect::<Vec<String>>()
                             .join("\r\n");
 
-
                         wtr.write_record(&[
-                            res.url,
+                            res.url.clone(),
                             res.status_code.map(|c| c.to_string()).unwrap_or_default(),
                             error_msg_str,
                             res.indexable.to_string(),
-                            res.indexability_status,
+                            res.indexability_status.clone(),
                             title_str,
                             title_len,
                             meta_str,
@@ -486,7 +653,6 @@ impl Table {
                             markdown_str,
                             schema_str,
                         ])?;
-
                     }
                 }
             }
@@ -505,7 +671,7 @@ impl Table {
             eprintln!("[Table Selection] Selected item changed: {:?}", item);
             if let Some(item) = item {
                 if let Some(row_data) = item.downcast_ref::<CrawlRowData>() {
-                    let url = row_data.get_result().map(|r| r.url);
+                    let url = row_data.get_result().map(|r| r.url.clone());
                     eprintln!("[Table Selection] Found CrawlRowData, URL: {:?}", url);
                     callback(url);
                 } else {
@@ -524,7 +690,7 @@ impl Table {
         F: Fn(&CrawlResult) -> String + 'static,
     {
         let factory = gtk::SignalListItemFactory::new();
-        
+
         factory.connect_setup(|_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let label = gtk::Label::new(None);

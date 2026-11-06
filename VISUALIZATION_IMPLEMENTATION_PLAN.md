@@ -1,3 +1,5 @@
+> Historical design proposal, not a description of the shipped UI. The application currently uses a native Cairo icicle view; embedded web rendering and its IPC are not wired into the desktop application. See [ARCHITECTURE.md](ARCHITECTURE.md).
+
 # VISUALIZATION IMPLEMENTATION PLAN — Tadpole SEO Domain Visualization Module
 
 ## 1. Executive Summary & Context

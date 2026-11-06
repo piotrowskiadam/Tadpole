@@ -29,7 +29,13 @@ impl LayoutCache {
         self.entries.get(&key)
     }
 
-    pub fn insert(&mut self, fingerprint: u64, layout: LayoutType, seed: u64, result: LayoutResult) {
+    pub fn insert(
+        &mut self,
+        fingerprint: u64,
+        layout: LayoutType,
+        seed: u64,
+        result: LayoutResult,
+    ) {
         let key = Self::make_key(fingerprint, layout, seed);
         self.entries.insert(key, result);
     }

@@ -2,7 +2,7 @@
 set -e
 
 echo "=== Building Tadpole in Release mode ==="
-cargo build --release
+cargo build --release --locked
 
 echo "=== Structuring AppDir ==="
 APPDIR="Tadpole.AppDir"

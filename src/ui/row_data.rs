@@ -1,6 +1,6 @@
+use crate::state::CrawlResult;
 use glib::Object;
 use glib::subclass::prelude::*;
-use crate::state::CrawlResult;
 
 glib::wrapper! {
     pub struct CrawlRowData(ObjectSubclass<imp::CrawlRowData>);
@@ -9,16 +9,16 @@ glib::wrapper! {
 impl CrawlRowData {
     pub fn new(result: CrawlResult) -> Self {
         let obj: Self = Object::builder().build();
-        *obj.imp().result.borrow_mut() = Some(result);
+        *obj.imp().result.borrow_mut() = Some(std::rc::Rc::new(result));
         obj
     }
 
-    pub fn get_result(&self) -> Option<CrawlResult> {
+    pub fn get_result(&self) -> Option<std::rc::Rc<CrawlResult>> {
         self.imp().result.borrow().clone()
     }
 
     pub fn set_result(&self, res: CrawlResult) {
-        *self.imp().result.borrow_mut() = Some(res);
+        *self.imp().result.borrow_mut() = Some(std::rc::Rc::new(res));
     }
 }
 
@@ -28,7 +28,7 @@ mod imp {
 
     #[derive(Default)]
     pub struct CrawlRowData {
-        pub result: RefCell<Option<CrawlResult>>,
+        pub result: RefCell<Option<std::rc::Rc<CrawlResult>>>,
     }
 
     #[glib::object_subclass]

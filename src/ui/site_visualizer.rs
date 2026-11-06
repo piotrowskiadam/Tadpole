@@ -1,685 +1,1055 @@
+mod draw;
+use crate::{
+    state::CrawlState,
+    visualization::{IcicleWeightMetric, NodeId, explorer::*},
+};
 use gtk::prelude::*;
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::rc::Rc;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use crate::state::CrawlState;
-use crate::visualization::export::*;
-use crate::visualization::icicle::IcicleTreeNode;
-use crate::visualization::*;
-
-pub struct VisualizerState {
-    pub icicle_metric: IcicleWeightMetric,
-    pub module: DomainVisualizationModule,
-    pub filter: GraphFilter,
-    pub search_query: String,
-    pub selected_node_id: Option<NodeId>,
-    pub matching_nodes: HashSet<NodeId>,
-
-    // Structure Map Interactivity & Drill-down State
-    pub icicle_zoom_path: Option<String>,
-    pub hovered_icicle_path: Option<String>,
-}
-
-impl Default for VisualizerState {
-    fn default() -> Self {
-        Self {
-            icicle_metric: IcicleWeightMetric::UrlCount,
-            module: DomainVisualizationModule::new(),
-            filter: GraphFilter::default(),
-            search_query: String::new(),
-            selected_node_id: None,
-            matching_nodes: HashSet::new(),
-
-            icicle_zoom_path: None,
-            hovered_icicle_path: None,
-        }
-    }
-}
-
+type SelectionCallback = Rc<RefCell<Option<Box<dyn Fn(Option<String>)>>>>;
+const PAGE_SIZE: usize = 200;
+const VIEWS: [View; 6] = [
+    View::Directory,
+    View::Icicle,
+    View::Paths,
+    View::Links,
+    View::Matrix,
+    View::Rank,
+];
+const METRICS: [IcicleWeightMetric; 6] = [
+    IcicleWeightMetric::UrlCount,
+    IcicleWeightMetric::PageSizeBytes,
+    IcicleWeightMetric::WordCount,
+    IcicleWeightMetric::IssueCount,
+    IcicleWeightMetric::InternalRankSum,
+    IcicleWeightMetric::ResponseTimeMs,
+];
+const FILTERS: [PageFilter; 5] = [
+    PageFilter::All,
+    PageFilter::Indexable,
+    PageFilter::Issues,
+    PageFilter::Errors,
+    PageFilter::Unreachable,
+];
 pub struct VisualizerWindow {
     window: gtk::Window,
-    pub state: Rc<RefCell<VisualizerState>>,
-    pub crawl_state: CrawlState,
-    pub drawing_area: gtk::DrawingArea,
-    selection_callback: Rc<RefCell<Option<Box<dyn Fn(Option<String>) + 'static>>>>,
+    callback: SelectionCallback,
 }
-
-impl VisualizerWindow {
-    pub fn new(parent: &(impl IsA<gtk::Window> + IsA<glib::Object>), crawl_state: CrawlState) -> Self {
-        // Fully Responsive Default Window Sizing (Allows shrinking down to 800px width)
-        let window = gtk::Window::builder()
-            .title("Domain Structure Visualizer — Directory Icicle Plot")
-            .transient_for(parent)
-            .modal(false)
-            .default_width(1080)
-            .default_height(680)
-            .build();
-
-        let main_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        main_box.set_margin_start(4);
-        main_box.set_margin_end(4);
-        main_box.set_margin_top(4);
-        main_box.set_margin_bottom(4);
-
-        let state = Rc::new(RefCell::new(VisualizerState::default()));
-        let selection_callback: Rc<RefCell<Option<Box<dyn Fn(Option<String>) + 'static>>>> =
-            Rc::new(RefCell::new(None));
-
-        // Build snapshot from crawl state
-        {
-            let results = crawl_state.get_all_results();
-            let snapshot = SnapshotBuilder::build_from_results(&results);
-            let mut st = state.borrow_mut();
-            st.module.load_snapshot(snapshot);
-            let config = PageRankConfig::default();
-            st.module.compute_internal_rank(&config);
+struct EvidenceItem {
+    row: EvidenceRow,
+    index: Arc<ExplorerIndex>,
+    depths: Arc<Depths>,
+    ranks: Option<Arc<[f32]>>,
+}
+struct Ui {
+    window: glib::WeakRef<gtk::Window>,
+    session: VisualizationSession,
+    request: RefCell<ViewRequest>,
+    ready: RefCell<Option<ReadyView>>,
+    selected: RefCell<String>,
+    hover: Cell<Option<Target>>,
+    callback: SelectionCallback,
+    dirty: Cell<Option<Instant>>,
+    busy: Cell<bool>,
+    updating: Cell<bool>,
+    area: gtk::DrawingArea,
+    mode: gtk::DropDown,
+    metric: gtk::DropDown,
+    filter: gtk::DropDown,
+    normalize: gtk::CheckButton,
+    matrix_controls: gtk::Box,
+    matrix_source: gtk::DropDown,
+    matrix_target: gtk::DropDown,
+    search: gtk::SearchEntry,
+    start: gtk::Entry,
+    status: gtk::Label,
+    legend: gtk::Label,
+    selected_label: gtk::Label,
+    store: gio::ListStore,
+    selection: gtk::SingleSelection,
+    evidence: gtk::ListView,
+    count: gtk::Label,
+    page: Cell<usize>,
+    previous: gtk::Button,
+    next: gtk::Button,
+    cancel: gtk::Button,
+    export: gtk::MenuButton,
+    copy: gtk::Button,
+    export_rx: RefCell<Option<std::sync::mpsc::Receiver<Result<String, String>>>>,
+}
+impl Ui {
+    fn schedule(&self) {
+        if !self.updating.get() {
+            self.dirty.set(Some(Instant::now()));
         }
-
-        // Header Toolbar Box
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-
-        let weight_lbl = gtk::Label::new(Some("Weight by:"));
-        toolbar.append(&weight_lbl);
-
-        let weight_combo = gtk::DropDown::from_strings(&[
-            "URL Count",
-            "Page Size (Bytes)",
-            "Word Count",
-            "HTTP Errors Only",
-            "Internal Rank Sum",
-            "Response Time (ms)",
-        ]);
-        toolbar.append(&weight_combo);
-
-        // Directory Tree Up Button (Visible when zoomed into a sub-folder)
-        let icicle_up_btn = gtk::Button::builder()
-            .label("⬆ Up Directory")
-            .tooltip_text("Zoom out to parent directory level")
-            .visible(false)
-            .build();
-        toolbar.append(&icicle_up_btn);
-
-        let reset_btn = gtk::Button::builder().label("Reset Zoom").tooltip_text("Reset to Root /").build();
-        toolbar.append(&reset_btn);
-
-        let search_entry = gtk::SearchEntry::builder()
-            .placeholder_text("Search Directory...")
-            .width_request(140)
-            .hexpand(false)
-            .build();
-        toolbar.append(&search_entry);
-
-        // Export Menu Button & Popover
-        let export_popover = gtk::Popover::new();
-        let export_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        export_box.set_margin_start(8);
-        export_box.set_margin_end(8);
-        export_box.set_margin_top(8);
-        export_box.set_margin_bottom(8);
-
-        let export_csv_nodes_btn = gtk::Button::with_label("📊 Export Nodes to CSV");
-        let export_csv_edges_btn = gtk::Button::with_label("🔗 Export Edges to CSV");
-        let export_json_btn = gtk::Button::with_label("🌐 Export Subgraph JSON");
-        let copy_url_btn = gtk::Button::with_label("📋 Copy Selected URL");
-
-        export_box.append(&export_csv_nodes_btn);
-        export_box.append(&export_csv_edges_btn);
-        export_box.append(&export_json_btn);
-        export_box.append(&copy_url_btn);
-        export_popover.set_child(Some(&export_box));
-
-        let export_menu_btn = gtk::MenuButton::builder()
-            .label("Export ▾")
-            .popover(&export_popover)
-            .build();
-        toolbar.append(&export_menu_btn);
-
-        // Compact Legend Label
-        let legend_lbl = gtk::Label::new(Some("● 2xx OK  ● 3xx Redirect  ● 4xx/5xx Error  ● Noindex"));
-        legend_lbl.add_css_class("dim-label");
-        legend_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        legend_lbl.set_hexpand(true);
-        legend_lbl.set_halign(gtk::Align::End);
-        toolbar.append(&legend_lbl);
-
-        main_box.append(&toolbar);
-
-        // Paned Split Layout: Canvas (Flexible) & Details Panel (Responsive 240px)
-        let split_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        split_paned.set_position(740);
-        split_paned.set_wide_handle(true);
-        split_paned.set_vexpand(true);
-        split_paned.set_hexpand(true);
-        split_paned.set_shrink_start_child(true);
-        split_paned.set_shrink_end_child(true);
-        main_box.append(&split_paned);
-
-        // Drawing Canvas Area
-        let drawing_area = gtk::DrawingArea::new();
-        drawing_area.set_vexpand(true);
-        drawing_area.set_hexpand(true);
-        split_paned.set_start_child(Some(&drawing_area));
-
-        // Details Panel Box (Right Sidebar)
-        let details_sidebar_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        details_sidebar_box.set_margin_start(6);
-        details_sidebar_box.set_margin_end(6);
-        details_sidebar_box.set_margin_top(6);
-        details_sidebar_box.set_margin_bottom(6);
-        details_sidebar_box.set_width_request(240);
-
-        let sidebar_title = gtk::Label::new(Some("Directory Details & Structure"));
-        sidebar_title.add_css_class("bold");
-        sidebar_title.set_halign(gtk::Align::Start);
-        details_sidebar_box.append(&sidebar_title);
-
-        let details_scroll = gtk::ScrolledWindow::builder()
-            .vexpand(true)
-            .hexpand(true)
-            .build();
-
-        let details_content = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        details_scroll.set_child(Some(&details_content));
-        details_sidebar_box.append(&details_scroll);
-
-        split_paned.set_end_child(Some(&details_sidebar_box));
-
-        window.set_child(Some(&main_box));
-
-        // Status bar
-        let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        status_bar.set_margin_start(6);
-        status_bar.set_margin_end(6);
-        status_bar.set_margin_top(2);
-        status_bar.set_margin_bottom(2);
-        let status_text = gtk::Label::new(Some("Ready | Click directory block to drill down / zoom"));
-        status_text.add_css_class("dim-label");
-        status_bar.append(&status_text);
-        main_box.append(&status_bar);
-
-        // Connect Draw Event
-        let state_draw = state.clone();
-        drawing_area.set_draw_func(move |_area, cr, width, height| {
-            let mut st = state_draw.borrow_mut();
-            Self::draw_canvas(&mut st, cr, width as f64, height as f64);
+    }
+    fn submit(&self, refresh: bool) {
+        if refresh {
+            let mut r = self.request.borrow_mut();
+            r.directory = 0;
+            r.tree_focus = None;
+            r.scope = None;
+        }
+        self.busy.set(true);
+        self.cancel.set_sensitive(true);
+        self.evidence.set_sensitive(false);
+        self.status.set_text(if refresh {
+            "Preparing a fresh crawl snapshot…"
+        } else {
+            "Updating… Previous diagram remains visible."
         });
-
-        // Motion Handler for On-Hover Highlighting
-        let gesture_motion = gtk::EventControllerMotion::new();
-        let state_motion = state.clone();
-        let area_motion = drawing_area.clone();
-        let status_text_motion = status_text.clone();
-
-        gesture_motion.connect_motion(move |_controller, x, y| {
-            let width = area_motion.width() as f64;
-            let height = area_motion.height() as f64;
-            let mut st = state_motion.borrow_mut();
-
-            if let Some(snapshot) = st.module.get_snapshot() {
-                let root = build_icicle_tree_from_snapshot(snapshot, st.icicle_metric);
-                let target_root = st
-                    .icicle_zoom_path
+        self.session.request(self.request.borrow().clone(), refresh);
+        self.dirty.set(None);
+    }
+    fn select(&self, url: String) {
+        *self.selected.borrow_mut() = url.clone();
+        self.selected_label.set_text(&url);
+        self.selected_label.set_tooltip_text(Some(&url));
+        self.copy.set_sensitive(!url.is_empty());
+        if let Some(cb) = self.callback.borrow().as_ref() {
+            cb(Some(url));
+        }
+        self.area.queue_draw();
+    }
+    fn selected_id(&self) -> Option<NodeId> {
+        self.ready
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.index.node(&self.selected.borrow()))
+    }
+    fn rebuild_evidence(&self) {
+        self.updating.set(true);
+        self.store.remove_all();
+        if let Some(ready) = self.ready.borrow().as_ref() {
+            let total = ready.frame.evidence.len();
+            let page = self.page.get().min(total.saturating_sub(1) / PAGE_SIZE);
+            self.page.set(page);
+            let from = page * PAGE_SIZE;
+            let end = (from + PAGE_SIZE).min(total);
+            for row in &ready.frame.evidence[from..end] {
+                self.store.append(&glib::BoxedAnyObject::new(EvidenceItem {
+                    row: *row,
+                    index: ready.index.clone(),
+                    depths: ready.frame.depths.clone(),
+                    ranks: ready.frame.ranks.clone(),
+                }));
+            }
+            self.count.set_text(&format!(
+                "Evidence · {}–{} of {} {}",
+                if total == 0 { 0 } else { from + 1 },
+                end,
+                total,
+                if ready
+                    .frame
+                    .evidence
+                    .iter()
+                    .take(1)
+                    .any(|r| r.target.is_some())
+                {
+                    "URL pairs"
+                } else {
+                    "URLs"
+                }
+            ));
+            self.previous.set_sensitive(page > 0);
+            self.next.set_sensitive(end < total);
+        }
+        self.selection.set_selected(gtk::INVALID_LIST_POSITION);
+        self.updating.set(false);
+    }
+    fn row(&self) -> Option<(String, Option<String>)> {
+        let object = self
+            .selection
+            .selected_item()?
+            .downcast::<glib::BoxedAnyObject>()
+            .ok()?;
+        let item = object.borrow::<EvidenceItem>();
+        Some((
+            item.index.url(item.row.page).into(),
+            item.row.target.map(|id| item.index.url(id).into()),
+        ))
+    }
+    fn navigate(&self, url: String, focus: bool) {
+        self.select(url.clone());
+        if focus && matches!(self.request.borrow().view, View::Links | View::Paths) {
+            let mut r = self.request.borrow_mut();
+            r.selected_url = url.clone();
+            r.scope = None;
+            if r.view == View::Paths {
+                r.tree_focus = self
+                    .ready
+                    .borrow()
                     .as_ref()
-                    .and_then(|p| root.find_by_path(p))
-                    .unwrap_or(&root);
-
-                if let Some(hit) = Self::hit_test_icicle(
-                    target_root,
-                    x,
-                    y,
-                    20.0,
-                    30.0,
-                    width - 40.0,
-                    height - 60.0,
-                    0,
-                ) {
-                    if st.hovered_icicle_path.as_deref() != Some(&hit.full_path) {
-                        st.hovered_icicle_path = Some(hit.full_path.clone());
-                        status_text_motion.set_text(&format!(
-                            "Directory: {} | Total Pages: {} | Errors: {}",
-                            hit.full_path, hit.total_pages, hit.error_count
-                        ));
-                        area_motion.queue_draw();
+                    .and_then(|v| v.index.node(&url));
+            }
+            drop(r);
+            self.schedule();
+        }
+    }
+    fn restore(&self) {
+        if let Some(v) = self.ready.borrow().as_ref() {
+            self.updating.set(true);
+            *self.request.borrow_mut() = v.request.clone();
+            self.mode
+                .set_selected(VIEWS.iter().position(|x| *x == v.request.view).unwrap_or(0) as u32);
+            self.metric.set_selected(
+                METRICS
+                    .iter()
+                    .position(|x| *x == v.request.metric)
+                    .unwrap_or(0) as u32,
+            );
+            self.filter.set_selected(
+                FILTERS
+                    .iter()
+                    .position(|x| *x == v.request.filter)
+                    .unwrap_or(0) as u32,
+            );
+            self.search.set_text(&v.request.query);
+            self.start.set_text(&v.request.start_url);
+            self.normalize.set_active(v.request.normalize);
+            self.metric
+                .set_visible(matches!(v.request.view, View::Directory | View::Icicle));
+            self.normalize.set_visible(v.request.view == View::Matrix);
+            self.updating.set(false);
+        }
+    }
+    fn hit(&self, x: f64, y: f64) -> Option<Target> {
+        let ready = self.ready.borrow();
+        let f = &ready.as_ref()?.frame;
+        let scale = (self.area.width() as f64 / f.width).min(self.area.height() as f64 / f.height);
+        f.hit_test(x / scale, y / scale).map(|m| m.target)
+    }
+    fn export(self: &Rc<Self>, kind: usize) {
+        if self.export_rx.borrow().is_some() {
+            return;
+        }
+        let Some(parent) = self.window.upgrade() else {
+            return;
+        };
+        let Some((index, ranks)) = self
+            .ready
+            .borrow()
+            .as_ref()
+            .map(|r| (r.index.clone(), r.frame.ranks.clone()))
+        else {
+            return;
+        };
+        let selected = index.node(&self.selected.borrow());
+        if kind == 2 && selected.is_none() {
+            self.status
+                .set_text("Select a URL in this snapshot before exporting its neighborhood.");
+            return;
+        }
+        let dialog = gtk::FileDialog::new();
+        dialog.set_title("Export crawl visualization evidence");
+        dialog.set_initial_name(Some(["nodes.csv", "edges.csv", "neighborhood.json"][kind]));
+        let weak = Rc::downgrade(self);
+        dialog.save(Some(&parent), gio::Cancellable::NONE, move |result| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let file = match result {
+                Ok(f) => f,
+                Err(e) => {
+                    if !e.matches(gtk::DialogError::Dismissed) {
+                        ui.status.set_text(&format!("Export not saved: {e}"));
                     }
                     return;
                 }
-            }
-            if st.hovered_icicle_path.is_some() {
-                st.hovered_icicle_path = None;
-                area_motion.queue_draw();
-            }
-        });
-        drawing_area.add_controller(gesture_motion);
-
-        // Click Gesture: Drill Down / Zoom into directory
-        let gesture_click = gtk::GestureClick::new();
-        let state_click = state.clone();
-        let area_click = drawing_area.clone();
-        let cb_click = selection_callback.clone();
-        let details_content_click = details_content.clone();
-        let status_text_click = status_text.clone();
-        let icicle_up_btn_c = icicle_up_btn.clone();
-
-        gesture_click.connect_pressed(move |_gesture, _n, x, y| {
-            let width = area_click.width() as f64;
-            let height = area_click.height() as f64;
-            let mut st = state_click.borrow_mut();
-
-            if let Some(snapshot) = st.module.get_snapshot() {
-                let root = build_icicle_tree_from_snapshot(snapshot, st.icicle_metric);
-                let target_root = st
-                    .icicle_zoom_path
-                    .as_ref()
-                    .and_then(|p| root.find_by_path(p))
-                    .unwrap_or(&root);
-
-                if let Some(hit) = Self::hit_test_icicle(
-                    target_root,
-                    x,
-                    y,
-                    20.0,
-                    30.0,
-                    width - 40.0,
-                    height - 60.0,
-                    0,
-                ) {
-                    // Zoom / Drill Down into clicked directory!
-                    st.icicle_zoom_path = Some(hit.full_path.clone());
-                    icicle_up_btn_c.set_visible(true);
-
-                    if let Some(ref cb) = *cb_click.borrow() {
-                        cb(Some(hit.full_path.clone()));
-                    }
-
-                    Self::update_details_sidebar_icicle(
-                        &details_content_click,
-                        hit,
-                        &state_click,
-                        &area_click,
-                    );
-
-                    status_text_click.set_text(&format!(
-                        "Drilled down to: {} ({} pages)",
-                        hit.full_path, hit.total_pages
-                    ));
-                    area_click.queue_draw();
-                }
-            }
-        });
-        drawing_area.add_controller(gesture_click);
-
-        // Weight Metric Combo Handler
-        let state_weight = state.clone();
-        let area_weight = drawing_area.clone();
-        weight_combo.connect_selected_notify(move |combo| {
-            let mut st = state_weight.borrow_mut();
-            st.icicle_metric = match combo.selected() {
-                0 => IcicleWeightMetric::UrlCount,
-                1 => IcicleWeightMetric::PageSizeBytes,
-                2 => IcicleWeightMetric::WordCount,
-                3 => IcicleWeightMetric::IssueCount,
-                4 => IcicleWeightMetric::InternalRankSum,
-                _ => IcicleWeightMetric::ResponseTimeMs,
             };
-            area_weight.queue_draw();
-        });
-
-        // Icicle Up Button Handler (Drill back up one directory level)
-        let state_up = state.clone();
-        let area_up = drawing_area.clone();
-        let btn_up = icicle_up_btn.clone();
-        icicle_up_btn.connect_clicked(move |_| {
-            let mut st = state_up.borrow_mut();
-            if let Some(ref path) = st.icicle_zoom_path.clone() {
-                let trimmed = path.trim_end_matches('/');
-                if let Some(last_slash) = trimmed.rfind('/') {
-                    let parent = &trimmed[..=last_slash];
-                    if parent.is_empty() || parent == "/" {
-                        st.icicle_zoom_path = None;
-                        btn_up.set_visible(false);
-                    } else {
-                        st.icicle_zoom_path = Some(parent.to_string());
+            let Some(path) = file.path() else {
+                ui.status.set_text("Choose a local file for export.");
+                return;
+            };
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            *ui.export_rx.borrow_mut() = Some(rx);
+            ui.export.set_sensitive(false);
+            ui.status.set_text("Preparing export in the background…");
+            std::thread::spawn(move || {
+                let mut snapshot = index.snapshot.clone();
+                if kind != 1 {
+                    let ranks = ranks.unwrap_or_else(|| {
+                        crate::visualization::calculate_internal_rank(
+                            &snapshot,
+                            &Default::default(),
+                        )
+                        .into()
+                    });
+                    let mut nodes = snapshot.nodes.to_vec();
+                    for (node, rank) in nodes.iter_mut().zip(ranks.iter()) {
+                        node.internal_rank = *rank;
                     }
-                } else {
-                    st.icicle_zoom_path = None;
-                    btn_up.set_visible(false);
+                    snapshot.nodes = nodes.into();
                 }
-            } else {
-                btn_up.set_visible(false);
-            }
-            area_up.queue_draw();
+                let result = match kind {
+                    0 => crate::visualization::export::export_nodes_to_csv(
+                        &snapshot,
+                        &path.to_string_lossy(),
+                    ),
+                    1 => crate::visualization::export::export_edges_to_csv(
+                        &snapshot,
+                        &path.to_string_lossy(),
+                    ),
+                    _ => std::fs::write(
+                        &path,
+                        crate::visualization::export::export_subgraph_json(&snapshot, selected),
+                    ),
+                };
+                let _ = tx.send(
+                    result
+                        .map(|_| format!("Export saved: {}", path.display()))
+                        .map_err(|e| {
+                            format!("Export failed: {e}. Choose another file or check permissions.")
+                        }),
+                );
+            });
         });
-
-        // Reset Zoom Button Handler
-        let state_reset = state.clone();
-        let area_reset = drawing_area.clone();
-        let btn_up_reset = icicle_up_btn.clone();
-        reset_btn.connect_clicked(move |_| {
-            let mut st = state_reset.borrow_mut();
-            st.icicle_zoom_path = None;
-            btn_up_reset.set_visible(false);
-            area_reset.queue_draw();
-        });
-
-
-        // Export CSV Nodes Button
-        let state_exp_nodes = state.clone();
-        let parent_win_nodes = window.clone();
-        export_csv_nodes_btn.connect_clicked(move |_| {
-            let st = state_exp_nodes.borrow();
-            if let Some(snapshot) = st.module.get_snapshot() {
-                let dialog = gtk::FileDialog::new();
-                dialog.set_title("Export Nodes to CSV");
-                dialog.set_initial_name(Some("nodes_export.csv"));
-
-                let snap = snapshot.clone();
-                dialog.save(Some(&parent_win_nodes), gio::Cancellable::NONE, move |res| {
-                    if let Ok(file) = res {
-                        if let Some(path) = file.path() {
-                            let _ = export_nodes_to_csv(&snap, &path.to_string_lossy());
-                        }
-                    }
-                });
-            }
-        });
-
-        // Export CSV Edges Button
-        let state_exp_edges = state.clone();
-        let parent_win_edges = window.clone();
-        export_csv_edges_btn.connect_clicked(move |_| {
-            let st = state_exp_edges.borrow();
-            if let Some(snapshot) = st.module.get_snapshot() {
-                let dialog = gtk::FileDialog::new();
-                dialog.set_title("Export Edges to CSV");
-                dialog.set_initial_name(Some("edges_export.csv"));
-
-                let snap = snapshot.clone();
-                dialog.save(Some(&parent_win_edges), gio::Cancellable::NONE, move |res| {
-                    if let Ok(file) = res {
-                        if let Some(path) = file.path() {
-                            let _ = export_edges_to_csv(&snap, &path.to_string_lossy());
-                        }
-                    }
-                });
-            }
-        });
-
-        // Export Subgraph JSON Button
-        let state_exp_json = state.clone();
-        let parent_win_json = window.clone();
-        export_json_btn.connect_clicked(move |_| {
-            let st = state_exp_json.borrow();
-            if let Some(snapshot) = st.module.get_snapshot() {
-                let dialog = gtk::FileDialog::new();
-                dialog.set_title("Export Subgraph to JSON");
-                dialog.set_initial_name(Some("subgraph_export.json"));
-
-                let json_str = export_subgraph_json(snapshot, st.selected_node_id);
-                dialog.save(Some(&parent_win_json), gio::Cancellable::NONE, move |res| {
-                    if let Ok(file) = res {
-                        if let Some(path) = file.path() {
-                            let _ = std::fs::write(path, &json_str);
-                        }
-                    }
-                });
-            }
-        });
-
-        // Copy Selected URL Button
-        let state_copy = state.clone();
-        let window_copy = window.clone();
-        copy_url_btn.connect_clicked(move |_| {
-            let st = state_copy.borrow();
-            if let Some(snapshot) = st.module.get_snapshot() {
-                if let Some(node_id) = st.selected_node_id {
-                    if let Some(node) = snapshot.nodes.get(node_id as usize) {
-                        let url = snapshot.node_url(node);
-                        let clipboard = window_copy.clipboard();
-                        clipboard.set_text(url);
-                    }
-                }
-            }
-        });
-
-        // Search entry handler
-        let state_search = state.clone();
-        let area_search = drawing_area.clone();
-        search_entry.connect_search_changed(move |entry| {
-            let query = entry.text().to_string();
-            let mut st = state_search.borrow_mut();
-            st.search_query = query;
-            area_search.queue_draw();
-        });
-
-        Self {
-            window,
-            state,
-            crawl_state,
-            drawing_area,
-            selection_callback,
+    }
+}
+impl VisualizerWindow {
+    pub fn new(
+        parent: &(impl IsA<gtk::Window> + IsA<glib::Object>),
+        crawl_state: CrawlState,
+        start_url: Option<String>,
+    ) -> Self {
+        let window = gtk::Window::builder()
+            .title("Tadpole — Site visualizations")
+            .transient_for(parent)
+            .default_width(1180)
+            .default_height(850)
+            .build();
+        let callback: SelectionCallback = Rc::new(RefCell::new(None));
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        root.set_margin_start(12);
+        root.set_margin_end(12);
+        root.set_margin_top(12);
+        root.set_margin_bottom(12);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let mode = gtk::DropDown::from_strings(&[
+            "Directory area",
+            "Directory icicle",
+            "Link-depth tree",
+            "URL links",
+            "Section links",
+            "Depth + rank",
+        ]);
+        mode.set_tooltip_text(Some("Choose the SEO question to explore"));
+        let metric = gtk::DropDown::from_strings(&[
+            "URL count",
+            "Page bytes",
+            "Words",
+            "Pages with issues",
+            "Internal rank",
+            "Response time",
+        ]);
+        metric.set_tooltip_text(Some("Additive directory weight"));
+        let normalize = gtk::CheckButton::with_label("Pairs per source page");
+        normalize.set_visible(false);
+        let up = gtk::Button::with_label("Up");
+        let reset = gtk::Button::with_label("Reset");
+        let expand = gtk::Button::with_label("Expand");
+        let refresh = gtk::Button::with_label("Refresh");
+        let cancel = gtk::Button::with_label("Cancel");
+        cancel.set_sensitive(false);
+        row.append(&mode);
+        row.append(&metric);
+        row.append(&normalize);
+        row.append(&up);
+        row.append(&reset);
+        row.append(&expand);
+        row.append(&refresh);
+        row.append(&cancel);
+        root.append(&row);
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let search = gtk::SearchEntry::builder()
+            .placeholder_text("Filter URLs…")
+            .hexpand(true)
+            .build();
+        let filter = gtk::DropDown::from_strings(&[
+            "All crawled URLs",
+            "Indexable",
+            "Pages with issues",
+            "HTTP errors",
+            "Unreachable from start",
+        ]);
+        let start = gtk::Entry::builder()
+            .placeholder_text("Start URL for shortest paths")
+            .hexpand(true)
+            .build();
+        start.set_tooltip_text(Some(
+            "Enter a crawled URL and press Enter, or use the selected URL as start",
+        ));
+        if let Some(url) = start_url.as_ref() {
+            start.set_text(url);
         }
-    }
+        let set_start = gtk::Button::with_label("Use selected as start");
+        controls.append(&search);
+        controls.append(&filter);
+        controls.append(&start);
+        controls.append(&set_start);
+        root.append(&controls);
+        let paned = gtk::Paned::new(gtk::Orientation::Vertical);
+        paned.set_vexpand(true);
+        paned.set_position(500);
+        paned.set_shrink_start_child(true);
+        paned.set_shrink_end_child(true);
+        let area = gtk::DrawingArea::builder()
+            .content_width(640)
+            .content_height(440)
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+        area.update_property(&[gtk::accessible::Property::Label(
+            "Site diagram. The complete evidence list below supports keyboard selection.",
+        )]);
+        let canvas = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .child(&area)
+            .build();
+        paned.set_start_child(Some(&canvas));
+        let bottom = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let legend = gtk::Label::new(None);
+        legend.set_wrap(true);
+        legend.set_xalign(0.);
+        legend.add_css_class("dim-label");
+        bottom.append(&legend);
+        let evidence_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let count = gtk::Label::new(Some("Evidence will appear here"));
+        count.set_xalign(0.);
+        count.set_hexpand(true);
+        let previous = gtk::Button::with_label("Previous");
+        let next = gtk::Button::with_label("Next");
+        let open_source = gtk::Button::with_label("Focus source / URL");
+        let open_target = gtk::Button::with_label("Focus target");
+        evidence_header.append(&count);
+        evidence_header.append(&open_source);
+        evidence_header.append(&open_target);
+        evidence_header.append(&previous);
+        evidence_header.append(&next);
+        bottom.append(&evidence_header);
+        let matrix_controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let matrix_source = gtk::DropDown::from_strings(&[]);
+        let matrix_target = gtk::DropDown::from_strings(&[]);
+        matrix_source.set_hexpand(true);
+        matrix_target.set_hexpand(true);
+        matrix_source.update_property(&[gtk::accessible::Property::Label("Matrix source section")]);
+        matrix_target.update_property(&[gtk::accessible::Property::Label("Matrix target section")]);
+        let matrix_open = gtk::Button::with_label("Show section links");
+        matrix_controls.append(&matrix_source);
+        matrix_controls.append(&matrix_target);
+        matrix_controls.append(&matrix_open);
+        matrix_controls.set_visible(false);
+        bottom.append(&matrix_controls);
 
+        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        let selection = gtk::SingleSelection::new(Some(store.clone()));
+        selection.set_autoselect(false);
+        selection.set_can_unselect(true);
+        let factory = gtk::SignalListItemFactory::new();
+        factory.connect_setup(|_, object| {
+            let item = object.downcast_ref::<gtk::ListItem>().unwrap();
+            let b = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            b.set_margin_top(4);
+            b.set_margin_bottom(4);
+            let main = gtk::Label::new(None);
+            main.set_xalign(0.);
+            main.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            let sub = gtk::Label::new(None);
+            sub.set_xalign(0.);
+            sub.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            sub.add_css_class("dim-label");
+            b.append(&main);
+            b.append(&sub);
+            item.set_child(Some(&b));
+        });
+        factory.connect_bind(|_, object| {
+            let item = object.downcast_ref::<gtk::ListItem>().unwrap();
+            let Some(value) = item.item().and_downcast::<glib::BoxedAnyObject>() else {
+                return;
+            };
+            let data = value.borrow::<EvidenceItem>();
+            let b = item.child().unwrap();
+            let main = b.first_child().unwrap().downcast::<gtk::Label>().unwrap();
+            let sub = main
+                .next_sibling()
+                .unwrap()
+                .downcast::<gtk::Label>()
+                .unwrap();
+            let url = data.index.url(data.row.page);
+            main.set_text(url);
+            main.set_tooltip_text(Some(url));
+            let node = &data.index.snapshot.nodes[data.row.page as usize];
+            let depth = data.depths.depth[data.row.page as usize]
+                .map_or("No path / unknown start".into(), |d| {
+                    format!("{d} links from start")
+                });
+            let rank = data
+                .ranks
+                .as_ref()
+                .map(|r| format!(" · {:.5}% internal rank", r[data.row.page as usize] * 100.0))
+                .unwrap_or_default();
+            let detail = data.row.target.map_or_else(
+                || {
+                    format!(
+                        "HTTP {} · {} · {} incoming / {} outgoing unique links",
+                        node.status_code, depth, node.unique_in_degree, node.unique_out_degree
+                    ) + &rank
+                },
+                |target| {
+                    format!(
+                        "→ {} · target HTTP {}",
+                        data.index.url(target),
+                        data.index.snapshot.nodes[target as usize].status_code
+                    )
+                },
+            );
+            sub.set_text(&detail);
+            sub.set_tooltip_text(Some(&detail));
+        });
+        let evidence = gtk::ListView::new(Some(selection.clone()), Some(factory));
+        evidence.set_single_click_activate(false);
+        let list_scroll = gtk::ScrolledWindow::builder()
+            .min_content_height(120)
+            .vexpand(true)
+            .child(&evidence)
+            .build();
+        bottom.append(&list_scroll);
+        paned.set_end_child(Some(&bottom));
+        root.append(&paned);
+        let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let selected_label =
+            gtk::Label::new(Some("Choose a URL from the diagram or evidence list"));
+        selected_label.set_selectable(true);
+        selected_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        selected_label.set_hexpand(true);
+        selected_label.set_xalign(0.);
+        let copy = gtk::Button::with_label("Copy URL");
+        copy.set_sensitive(false);
+        let export = gtk::MenuButton::builder().label("Export").build();
+        export.set_sensitive(false);
+        let popover = gtk::Popover::new();
+        let export_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let export_buttons = [
+            gtk::Button::with_label("All crawled nodes CSV"),
+            gtk::Button::with_label("All crawled edges CSV"),
+            gtk::Button::with_label("Selected URL neighborhood JSON"),
+        ];
+        for button in &export_buttons {
+            export_box.append(button);
+        }
+        popover.set_child(Some(&export_box));
+        export.set_popover(Some(&popover));
+        footer.append(&selected_label);
+        footer.append(&copy);
+        footer.append(&export);
+        root.append(&footer);
+        let status = gtk::Label::new(Some("Preparing visualization in the background…"));
+        status.set_xalign(0.);
+        status.set_wrap(true);
+        status.add_css_class("dim-label");
+        root.append(&status);
+        window.set_child(Some(&root));
+        let session = VisualizationSession::new(move || crawl_state.visualization_results());
+        let request = ViewRequest {
+            start_url: start_url.unwrap_or_default(),
+            ..Default::default()
+        };
+        let ui = Rc::new(Ui {
+            window: window.downgrade(),
+            session,
+            request: RefCell::new(request),
+            ready: RefCell::new(None),
+            selected: RefCell::new(String::new()),
+            hover: Cell::new(None),
+            callback: callback.clone(),
+            dirty: Cell::new(None),
+            busy: Cell::new(false),
+            updating: Cell::new(false),
+            area,
+            mode,
+            metric,
+            normalize,
+            matrix_controls,
+            matrix_source,
+            matrix_target,
+            filter,
+            search,
+            start,
+            status,
+            legend,
+            selected_label,
+            store,
+            selection,
+            evidence,
+            count,
+            page: Cell::new(0),
+            previous,
+            next,
+            cancel,
+            export,
+            copy,
+            export_rx: RefCell::new(None),
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.area.set_draw_func(move |area, cr, w, h| {
+            if let Some(u) = weak.upgrade() {
+                let ready = u.ready.borrow();
+                draw::paint(
+                    area,
+                    cr,
+                    w,
+                    h,
+                    ready.as_ref().map(|r| r.frame.as_ref()),
+                    u.selected_id(),
+                    u.hover.get(),
+                );
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.area.connect_resize(move |_, w, h| {
+            if let Some(u) = weak.upgrade() {
+                let mut r = u.request.borrow_mut();
+                if r.width != w as u32 || r.height != h as u32 {
+                    r.width = w.max(640) as u32;
+                    r.height = h.max(320) as u32;
+                    drop(r);
+                    u.schedule();
+                }
+            }
+        });
+        let motion = gtk::EventControllerMotion::new();
+        let weak = Rc::downgrade(&ui);
+        motion.connect_motion(move |_, x, y| {
+            if let Some(u) = weak.upgrade() {
+                let target = u.hit(x, y);
+                if u.hover.replace(target) != target {
+                    let ready = u.ready.borrow();
+                    let tip = ready
+                        .as_ref()
+                        .and_then(|v| {
+                            let scale = (u.area.width() as f64 / v.frame.width)
+                                .min(u.area.height() as f64 / v.frame.height);
+                            v.frame.hit_test(x / scale, y / scale)
+                        })
+                        .map(|m| m.tooltip.as_str());
+                    u.area.set_tooltip_text(tip);
+                    u.area.queue_draw();
+                }
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        motion.connect_leave(move |_| {
+            if let Some(u) = weak.upgrade() {
+                u.hover.set(None);
+                u.area.queue_draw();
+            }
+        });
+        ui.area.add_controller(motion);
+        let click = gtk::GestureClick::new();
+        let weak = Rc::downgrade(&ui);
+        click.connect_pressed(move |_, press, x, y| {
+            if let Some(u) = weak.upgrade() {
+                if u.busy.get() {
+                    return;
+                }
+                let Some(target) = u.hit(x, y) else {
+                    return;
+                };
+                match target {
+                    Target::Page(id) => {
+                        let url = u
+                            .ready
+                            .borrow()
+                            .as_ref()
+                            .map(|v| v.index.url(id).to_string());
+                        if let Some(url) = url {
+                            let view = u.request.borrow().view;
+                            u.navigate(url, view == View::Links || press == 2);
+                        }
+                    }
+                    Target::Directory(id) => {
+                        let mut r = u.request.borrow_mut();
+                        r.directory = id;
+                        r.scope = None;
+                        drop(r);
+                        u.schedule();
+                    }
+                    other => {
+                        u.request.borrow_mut().scope = Some(other);
+                        u.schedule();
+                    }
+                }
+            }
+        });
+        ui.area.add_controller(click);
+        let weak = Rc::downgrade(&ui);
+        ui.mode.connect_selected_notify(move |d| {
+            if let Some(u) = weak.upgrade() {
+                if u.updating.get() {
+                    return;
+                }
+                let view = VIEWS[d.selected() as usize];
+                {
+                    let mut r = u.request.borrow_mut();
+                    r.view = view;
+                    r.scope = None;
+                    r.selected_url = u.selected.borrow().clone();
+                }
+                u.metric
+                    .set_visible(matches!(view, View::Directory | View::Icicle));
+                u.normalize.set_visible(view == View::Matrix);
+                u.page.set(0);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.metric.connect_selected_notify(move |d| {
+            if let Some(u) = weak.upgrade() {
+                if u.updating.get() {
+                    return;
+                }
+                u.request.borrow_mut().metric = METRICS[d.selected() as usize];
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.normalize.connect_toggled(move |b| {
+            if let Some(u) = weak.upgrade() {
+                if u.updating.get() {
+                    return;
+                }
+                u.request.borrow_mut().normalize = b.is_active();
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.filter.connect_selected_notify(move |d| {
+            if let Some(u) = weak.upgrade() {
+                if u.updating.get() {
+                    return;
+                }
+                let mut r = u.request.borrow_mut();
+                r.filter = FILTERS[d.selected() as usize];
+                r.scope = None;
+                drop(r);
+                u.page.set(0);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.search.connect_search_changed(move |entry| {
+            if let Some(u) = weak.upgrade() {
+                if u.updating.get() {
+                    return;
+                }
+                let mut r = u.request.borrow_mut();
+                if r.query == entry.text().as_str() {
+                    return;
+                }
+                r.query = entry.text().to_string();
+                r.scope = None;
+                drop(r);
+                u.page.set(0);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.start.connect_activate(move |entry| {
+            if let Some(u) = weak.upgrade() {
+                let mut r = u.request.borrow_mut();
+                r.start_url = entry.text().trim().into();
+                r.tree_focus = None;
+                r.scope = None;
+                drop(r);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        set_start.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                let url = u.selected.borrow().clone();
+                if url.is_empty() {
+                    u.status.set_text(
+                        "Select a crawled URL first, or enter a start URL and press Enter.",
+                    );
+                    return;
+                }
+                u.start.set_text(&url);
+                let mut r = u.request.borrow_mut();
+                r.start_url = url;
+                r.tree_focus = None;
+                r.scope = None;
+                drop(r);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        up.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                let ready = u.ready.borrow();
+                if let Some(v) = ready.as_ref() {
+                    let mut r = u.request.borrow_mut();
+                    r.scope = None;
+                    match r.view {
+                        View::Directory | View::Icicle => {
+                            r.directory = v
+                                .index
+                                .directories
+                                .get(r.directory)
+                                .and_then(|d| d.parent)
+                                .unwrap_or(0)
+                        }
+                        View::Paths => {
+                            r.tree_focus = r.tree_focus.and_then(|id| {
+                                v.frame.depths.parent.get(id as usize).copied().flatten()
+                            })
+                        }
+                        _ => {}
+                    }
+                }
+                drop(ready);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        reset.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                let mut r = u.request.borrow_mut();
+                r.directory = 0;
+                r.tree_focus = None;
+                r.scope = None;
+                drop(r);
+                u.page.set(0);
+                u.area.set_content_height(440);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        expand.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                let height = (u.area.content_height() + 400).min(8192);
+                u.area.set_content_height(height);
+                u.schedule();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        refresh.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                u.submit(true);
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.cancel.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                u.session.cancel();
+                u.dirty.set(None);
+                u.busy.set(false);
+                u.cancel.set_sensitive(false);
+                u.evidence.set_sensitive(true);
+                u.restore();
+                u.status.set_text(
+                    "Cancelled. Showing the last completed view; Refresh retries preparation.",
+                );
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.selection.connect_selected_notify(move |_| {
+            if let Some(u) = weak.upgrade() {
+                if !u.updating.get() {
+                    if let Some((url, _)) = u.row() {
+                        u.select(url);
+                    }
+                }
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.evidence.connect_activate(move |_, _| {
+            if let Some(u) = weak.upgrade() {
+                if let Some((source, target)) = u.row() {
+                    u.navigate(target.unwrap_or(source), true);
+                }
+            }
+        });
+        for (target, button) in [(false, open_source), (true, open_target)] {
+            let weak = Rc::downgrade(&ui);
+            button.connect_clicked(move |_| {
+                if let Some(u) = weak.upgrade() {
+                    if let Some((source, dest)) = u.row() {
+                        u.navigate(
+                            if target {
+                                dest.unwrap_or(source)
+                            } else {
+                                source
+                            },
+                            true,
+                        );
+                    }
+                }
+            });
+        }
+        for (forward, button) in [(false, ui.previous.clone()), (true, ui.next.clone())] {
+            let weak = Rc::downgrade(&ui);
+            button.connect_clicked(move |_| {
+                if let Some(u) = weak.upgrade() {
+                    u.page.set(if forward {
+                        u.page.get() + 1
+                    } else {
+                        u.page.get().saturating_sub(1)
+                    });
+                    u.rebuild_evidence();
+                }
+            });
+        }
+        let weak = Rc::downgrade(&ui);
+        matrix_open.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                let ready = u.ready.borrow();
+                if let Some(v) = ready.as_ref() {
+                    if v.frame.view == View::Matrix {
+                        let n = (v.frame.marks.len() as f64).sqrt() as usize;
+                        let a = u.matrix_source.selected() as usize;
+                        let b = u.matrix_target.selected() as usize;
+                        if a < n && b < n {
+                            if let Some(mark) = v.frame.marks.get(a * n + b) {
+                                u.request.borrow_mut().scope = Some(mark.target);
+                                u.page.set(0);
+                                u.schedule();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        ui.copy.connect_clicked(move |_| {
+            if let Some(u) = weak.upgrade() {
+                if let Some(display) = gdk::Display::default() {
+                    display.clipboard().set_text(&u.selected.borrow());
+                }
+            }
+        });
+        for (kind, button) in export_buttons.into_iter().enumerate() {
+            let weak = Rc::downgrade(&ui);
+            let pop = popover.downgrade();
+            button.connect_clicked(move |_| {
+                if let Some(pop) = pop.upgrade() {
+                    pop.popdown();
+                }
+                if let Some(u) = weak.upgrade() {
+                    u.export(kind);
+                }
+            });
+        }
+        let weak = Rc::downgrade(&ui);
+        glib::timeout_add_local(Duration::from_millis(50), move || {
+            let Some(u) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if u.dirty
+                .get()
+                .is_some_and(|at| at.elapsed() >= Duration::from_millis(80))
+            {
+                u.submit(false);
+            }
+            if let Some(event) = u.session.poll() {
+                u.busy.set(false);
+                u.cancel.set_sensitive(false);
+                u.evidence.set_sensitive(true);
+                match event {
+                    SessionEvent::Ready(v) => {
+                        u.legend.set_text(&v.frame.legend);
+                        u.matrix_controls.set_visible(v.frame.view == View::Matrix);
+                        if v.frame.view == View::Matrix {
+                            let n = (v.frame.marks.len() as f64).sqrt() as usize;
+                            let sources: Vec<String> = (0..n)
+                                .map(|i| {
+                                    v.frame.marks[i * n]
+                                        .tooltip
+                                        .split(" → ")
+                                        .next()
+                                        .unwrap_or("")
+                                        .to_string()
+                                })
+                                .collect();
+                            let targets: Vec<String> = (0..n)
+                                .map(|i| {
+                                    v.frame.marks[i]
+                                        .tooltip
+                                        .split(" → ")
+                                        .nth(1)
+                                        .unwrap_or("")
+                                        .rsplit_once(": ")
+                                        .map_or("", |(name, _)| name)
+                                        .to_string()
+                                })
+                                .collect();
+                            let source_refs: Vec<&str> =
+                                sources.iter().map(String::as_str).collect();
+                            let target_refs: Vec<&str> =
+                                targets.iter().map(String::as_str).collect();
+                            u.matrix_source
+                                .set_model(Some(&gtk::StringList::new(&source_refs)));
+                            u.matrix_target
+                                .set_model(Some(&gtk::StringList::new(&target_refs)));
+                        }
+
+                        let stamp = glib::DateTime::now_local()
+                            .ok()
+                            .and_then(|d| d.format("%H:%M:%S").ok())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        u.status.set_text(&format!(
+                            "View updated at {stamp}. {} Refresh captures crawl updates.",
+                            v.frame.status
+                        ));
+                        if u.start.text().is_empty() {
+                            if let Some(start) = v.index.inferred_start() {
+                                u.start.set_text(start);
+                                u.request.borrow_mut().start_url = start.into();
+                            }
+                        }
+                        if u.selected.borrow().is_empty() {
+                            if let Some(id) = v.frame.focus {
+                                u.select(v.index.url(id).into());
+                            }
+                        }
+                        *u.ready.borrow_mut() = Some(v);
+                        u.hover.set(None);
+                        u.export.set_sensitive(true);
+                        u.page.set(0);
+                        u.rebuild_evidence();
+                        u.area.queue_draw();
+                    }
+                    SessionEvent::Failed { message, .. } => u.status.set_text(&message),
+                }
+            }
+            let export_result = u
+                .export_rx
+                .borrow()
+                .as_ref()
+                .and_then(|rx| rx.try_recv().ok());
+            if let Some(result) = export_result {
+                u.status.set_text(&result.unwrap_or_else(|e| e));
+                u.export_rx.borrow_mut().take();
+                u.export.set_sensitive(true);
+            }
+            glib::ControlFlow::Continue
+        });
+        let keep = ui.clone();
+        window.connect_destroy(move |_| keep.session.close());
+        ui.submit(false);
+        Self { window, callback }
+    }
     pub fn connect_selection_changed<F: Fn(Option<String>) + 'static>(&self, f: F) {
-        *self.selection_callback.borrow_mut() = Some(Box::new(f));
+        *self.callback.borrow_mut() = Some(Box::new(f));
     }
-
     pub fn show(&self) {
         self.window.present();
-    }
-
-    fn update_details_sidebar_icicle(
-        container: &gtk::Box,
-        icicle_node: &IcicleTreeNode,
-        _state_rc: &Rc<RefCell<VisualizerState>>,
-        _area: &gtk::DrawingArea,
-    ) {
-        while let Some(child) = container.first_child() {
-            container.remove(&child);
-        }
-
-        let grp = gtk::Box::new(gtk::Orientation::Vertical, 4);
-
-        let path_lbl = gtk::Label::new(Some(&format!("Directory: {}", icicle_node.full_path)));
-        path_lbl.add_css_class("bold");
-        path_lbl.set_wrap(true);
-        path_lbl.set_halign(gtk::Align::Start);
-        grp.append(&path_lbl);
-
-        let stat_str = format!(
-            "Total Pages: {} | Indexable: {}\nHTTP Errors (4xx/5xx): {}",
-            icicle_node.total_pages, icicle_node.indexable_pages, icicle_node.error_count
-        );
-        let stat_lbl = gtk::Label::new(Some(&stat_str));
-        stat_lbl.set_halign(gtk::Align::Start);
-        grp.append(&stat_lbl);
-
-        container.append(&grp);
-        container.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-
-        let sub_title = gtk::Label::new(Some("Sub-directories"));
-        sub_title.add_css_class("bold");
-        sub_title.set_halign(gtk::Align::Start);
-        container.append(&sub_title);
-
-        if icicle_node.children.is_empty() {
-            let no_child = gtk::Label::new(Some("No deeper sub-directories. Click '⬆ Up Directory' to zoom out."));
-            no_child.add_css_class("dim-label");
-            no_child.set_wrap(true);
-            container.append(&no_child);
-        } else {
-            let child_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
-            for child in &icicle_node.children {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                let lbl = gtk::Label::new(Some(&format!("📁 {} ({} pages)", child.name, child.total_pages)));
-                lbl.set_halign(gtk::Align::Start);
-                row.append(&lbl);
-                child_box.append(&row);
-            }
-            container.append(&child_box);
-        }
-    }
-
-    fn hit_test_icicle<'a>(
-        node: &'a IcicleTreeNode,
-        click_x: f64,
-        click_y: f64,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        depth: usize,
-    ) -> Option<&'a IcicleTreeNode> {
-        if w < 2.0 || h < 4.0 {
-            return None;
-        }
-
-        let level_h = 40.0;
-        let curr_y = y + (depth as f64 * (level_h + 4.0));
-
-        if curr_y + level_h > y + h {
-            return None;
-        }
-
-        if click_x >= x && click_x <= x + w && click_y >= curr_y && click_y <= curr_y + level_h {
-            return Some(node);
-        }
-
-        if node.children.is_empty() || node.weight_value <= 0.0 {
-            return None;
-        }
-
-        let total_weight = node.weight_value;
-        let mut curr_x = x;
-
-        for child in &node.children {
-            let child_w = (child.weight_value / total_weight) * w;
-            if let Some(hit) = Self::hit_test_icicle(child, click_x, click_y, curr_x, y, child_w, h, depth + 1) {
-                return Some(hit);
-            }
-            curr_x += child_w;
-        }
-
-        None
-    }
-
-    fn draw_canvas(st: &mut VisualizerState, cr: &cairo::Context, width: f64, height: f64) {
-        // Background
-        cr.set_source_rgb(0.08, 0.09, 0.11); // Dark background
-        cr.paint().unwrap();
-
-        Self::draw_structure_map(st, cr, width, height);
-    }
-
-    fn draw_structure_map(st: &VisualizerState, cr: &cairo::Context, width: f64, height: f64) {
-        let snapshot = match st.module.get_snapshot() {
-            Some(s) => s,
-            None => return,
-        };
-
-        let icicle_root = build_icicle_tree_from_snapshot(snapshot, st.icicle_metric);
-        let target_root = st
-            .icicle_zoom_path
-            .as_ref()
-            .and_then(|p| icicle_root.find_by_path(p))
-            .unwrap_or(&icicle_root);
-
-        let h_path = st.hovered_icicle_path.as_deref();
-        let z_path = st.icicle_zoom_path.as_deref();
-
-        Self::draw_icicle_node(
-            target_root,
-            cr,
-            20.0,
-            30.0,
-            width - 40.0,
-            height - 60.0,
-            0,
-            h_path,
-            z_path,
-        );
-    }
-
-    fn draw_icicle_node(
-        node: &IcicleTreeNode,
-        cr: &cairo::Context,
-        x: f64,
-        y: f64,
-        w: f64,
-        h: f64,
-        depth: usize,
-        hovered_path: Option<&str>,
-        selected_path: Option<&str>,
-    ) {
-        if w < 2.0 || h < 4.0 {
-            return;
-        }
-
-        let level_h = 40.0;
-        let curr_y = y + (depth as f64 * (level_h + 4.0));
-
-        if curr_y + level_h > y + h {
-            return;
-        }
-
-        let is_hovered = hovered_path.map_or(false, |p| p == node.full_path);
-        let is_selected = selected_path.map_or(false, |p| p == node.full_path);
-
-        // Color based on hover, error count & depth
-        if is_hovered {
-            cr.set_source_rgb(0.3, 0.7, 1.0); // Bright Blue on Hover
-        } else if node.error_count > 0 {
-            cr.set_source_rgb(0.85, 0.25, 0.25);
-        } else if depth % 2 == 0 {
-            cr.set_source_rgb(0.2, 0.45, 0.7);
-        } else {
-            cr.set_source_rgb(0.25, 0.55, 0.8);
-        }
-
-        cr.rectangle(x, curr_y, w, level_h);
-        cr.fill().unwrap();
-
-        // Stroke outline
-        if is_hovered || is_selected {
-            cr.set_source_rgb(1.0, 1.0, 1.0);
-            cr.set_line_width(2.5);
-        } else {
-            cr.set_source_rgb(0.08, 0.09, 0.11);
-            cr.set_line_width(1.0);
-        }
-        cr.rectangle(x, curr_y, w, level_h);
-        cr.stroke().unwrap();
-
-        if w > 25.0 {
-            cr.set_source_rgb(1.0, 1.0, 1.0);
-            cr.set_font_size(11.0);
-            cr.move_to(x + 4.0, curr_y + 22.0);
-            let label = format!("{} ({})", node.name, node.total_pages);
-            cr.show_text(&label).unwrap();
-        }
-
-        if node.children.is_empty() || node.weight_value <= 0.0 {
-            return;
-        }
-
-        let total_weight = node.weight_value;
-        let mut curr_x = x;
-
-        for child in &node.children {
-            let child_w = (child.weight_value / total_weight) * w;
-            Self::draw_icicle_node(
-                child,
-                cr,
-                curr_x,
-                y,
-                child_w,
-                h,
-                depth + 1,
-                hovered_path,
-                selected_path,
-            );
-            curr_x += child_w;
-        }
     }
 }

@@ -1,11 +1,11 @@
+use crate::state::{CrawlState, ImageInfo};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::state::{CrawlState, ImageInfo};
 
 pub struct Details {
     notebook: gtk::Notebook,
-    
+
     // URL Info Tab widgets
     val_url: gtk::Label,
     val_status: gtk::Label,
@@ -34,7 +34,7 @@ pub struct Details {
 
     // Inlinks Tab widgets
     inlinks_list: gtk::ListBox,
-    
+
     // Outlinks Tab widgets
     outlinks_list: gtk::ListBox,
 
@@ -86,9 +86,11 @@ impl Details {
         let val_status = Self::add_info_row(&info_list, "Status Code");
         let val_index = Self::add_info_row(&info_list, "Indexability");
         let val_canonical = Self::add_info_row(&info_list, "Canonical URL");
-        
-        let (val_title, btn_suggest_title) = Self::add_info_row_with_action(&info_list, "Page Title");
-        let (val_desc, btn_suggest_desc) = Self::add_info_row_with_action(&info_list, "Meta Description");
+
+        let (val_title, btn_suggest_title) =
+            Self::add_info_row_with_action(&info_list, "Page Title");
+        let (val_desc, btn_suggest_desc) =
+            Self::add_info_row_with_action(&info_list, "Meta Description");
 
         let val_h1 = Self::add_info_row(&info_list, "H1");
         let val_h2 = Self::add_info_row(&info_list, "H2");
@@ -104,7 +106,7 @@ impl Details {
         inlinks_toolbar.set_margin_end(10);
         inlinks_toolbar.set_margin_top(6);
         inlinks_toolbar.set_margin_bottom(6);
-        
+
         let inlinks_lbl = gtk::Label::new(Some("Inbound links pointing to this page"));
         inlinks_lbl.add_css_class("dim-label");
         inlinks_lbl.set_halign(gtk::Align::Start);
@@ -187,12 +189,12 @@ impl Details {
         let val_og_image = Self::add_info_row(&social_list, "og:image");
         let val_og_url = Self::add_info_row(&social_list, "og:url");
         let val_og_type = Self::add_info_row(&social_list, "og:type");
-        
+
         let val_tw_title = Self::add_info_row(&social_list, "twitter:title");
         let val_tw_desc = Self::add_info_row(&social_list, "twitter:description");
         let val_tw_image = Self::add_info_row(&social_list, "twitter:image");
         let val_tw_card = Self::add_info_row(&social_list, "twitter:card");
-        
+
         let val_social_diag = Self::add_info_row(&social_list, "Diagnostics");
 
         notebook.append_page(&social_scroll, Some(&gtk::Label::new(Some("Social / OG"))));
@@ -229,7 +231,8 @@ impl Details {
                             text.push_str(&format!("H{}: {}\n", heading.level, heading.text));
                         }
                         if !text.is_empty() {
-                            let display = gdk::Display::default().expect("Could not get GDK display");
+                            let display =
+                                gdk::Display::default().expect("Could not get GDK display");
                             let clipboard = display.clipboard();
                             clipboard.set_text(&text);
 
@@ -238,10 +241,13 @@ impl Details {
                             btn_clone.set_icon_name("emblem-ok-symbolic");
 
                             let btn_reset = btn_clone.clone();
-                            glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
-                                btn_reset.set_label("Copy Outline");
-                                btn_reset.set_icon_name("edit-copy-symbolic");
-                            });
+                            glib::timeout_add_local_once(
+                                std::time::Duration::from_secs(2),
+                                move || {
+                                    btn_reset.set_label("Copy Outline");
+                                    btn_reset.set_icon_name("edit-copy-symbolic");
+                                },
+                            );
                         }
                     }
                 }
@@ -344,7 +350,6 @@ impl Details {
 
         // Syntax-highlighting helper — colours JSON keys, strings, numbers, booleans, null.
         let apply_json_highlighting = {
-
             let schema_raw_text = schema_raw_text.clone();
             move |json: &str| {
                 let buf = schema_raw_text.buffer();
@@ -359,12 +364,14 @@ impl Details {
                         tag_table.add(&tag);
                     }
                 };
-                ensure_tag("json-key",    "foreground", "#89b4fa"); // blue   – keys
+                ensure_tag("json-key", "foreground", "#89b4fa"); // blue   – keys
                 ensure_tag("json-string", "foreground", "#a6e3a1"); // green  – string values
                 ensure_tag("json-number", "foreground", "#fab387"); // orange – numbers
-                ensure_tag("json-bool",   "foreground", "#f38ba8"); // red    – true/false/null
+                ensure_tag("json-bool", "foreground", "#f38ba8"); // red    – true/false/null
 
-                if json.is_empty() { return; }
+                if json.is_empty() {
+                    return;
+                }
 
                 // Walk through *character* indices.
                 // IMPORTANT: buf.iter_at_offset() takes CHARACTER offsets (Unicode
@@ -387,21 +394,29 @@ impl Details {
                         let start = i; // char offset of opening "
                         i += 1;
                         while i < len {
-                            if chars[i] == '\\' { i += 2; continue; }
-                            if chars[i] == '"'  { i += 1; break; }
+                            if chars[i] == '\\' {
+                                i += 2;
+                                continue;
+                            }
+                            if chars[i] == '"' {
+                                i += 1;
+                                break;
+                            }
                             i += 1;
                         }
                         let end = i; // char offset just past closing "
 
                         // Peek ahead past whitespace to see if ':' follows → key
                         let mut j = end;
-                        while j < len && chars[j].is_whitespace() { j += 1; }
+                        while j < len && chars[j].is_whitespace() {
+                            j += 1;
+                        }
                         let is_key = j < len && chars[j] == ':';
 
                         let tag_name = if is_key { "json-key" } else { "json-string" };
                         // Use char offsets directly — iter_at_offset counts code points
                         let iter_s = buf.iter_at_offset(start as i32);
-                        let iter_e = buf.iter_at_offset(end   as i32);
+                        let iter_e = buf.iter_at_offset(end as i32);
                         buf.apply_tag_by_name(tag_name, &iter_s, &iter_e);
                         continue;
                     }
@@ -413,19 +428,22 @@ impl Details {
                             i += 1;
                         }
                         let iter_s = buf.iter_at_offset(start as i32);
-                        let iter_e = buf.iter_at_offset(i     as i32);
+                        let iter_e = buf.iter_at_offset(i as i32);
                         buf.apply_tag_by_name("json-number", &iter_s, &iter_e);
                         continue;
                     }
 
                     // true / false / null
-                    if chars[i..].starts_with(&['t','r','u','e'])
-                    || chars[i..].starts_with(&['f','a','l','s','e'])
-                    || chars[i..].starts_with(&['n','u','l','l']) {
+                    if chars[i..].starts_with(&['t', 'r', 'u', 'e'])
+                        || chars[i..].starts_with(&['f', 'a', 'l', 's', 'e'])
+                        || chars[i..].starts_with(&['n', 'u', 'l', 'l'])
+                    {
                         let start = i;
-                        while i < len && chars[i].is_alphabetic() { i += 1; }
+                        while i < len && chars[i].is_alphabetic() {
+                            i += 1;
+                        }
                         let iter_s = buf.iter_at_offset(start as i32);
-                        let iter_e = buf.iter_at_offset(i     as i32);
+                        let iter_e = buf.iter_at_offset(i as i32);
                         buf.apply_tag_by_name("json-bool", &iter_s, &iter_e);
                         continue;
                     }
@@ -435,9 +453,7 @@ impl Details {
             }
         };
 
-
         let apply_json_highlighting = std::rc::Rc::new(apply_json_highlighting);
-
 
         notebook.append_page(&schema_box, Some(&gtk::Label::new(Some("Schema"))));
 
@@ -455,12 +471,13 @@ impl Details {
                 if let Some(url) = active_url_for_all.borrow().as_ref() {
                     if let Some(state) = crawl_state_for_all.borrow().as_ref() {
                         if let Some(res) = state.get_result(url) {
-                            let all: Vec<serde_json::Value> = res.schema_json_ld.iter()
+                            let all: Vec<serde_json::Value> = res
+                                .schema_json_ld
+                                .iter()
                                 .filter_map(|s| serde_json::from_str(s).ok())
                                 .collect();
                             let merged = if all.len() == 1 {
-                                serde_json::to_string_pretty(&all[0])
-                                    .unwrap_or_default()
+                                serde_json::to_string_pretty(&all[0]).unwrap_or_default()
                             } else {
                                 serde_json::to_string_pretty(&serde_json::Value::Array(all))
                                     .unwrap_or_default()
@@ -501,8 +518,11 @@ impl Details {
                                 let block_idx = idx as usize;
                                 if block_idx < res.schema_json_ld.len() {
                                     let json_str = &res.schema_json_ld[block_idx];
-                                    let formatted = if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                        serde_json::to_string_pretty(&val).unwrap_or_else(|_| json_str.to_string())
+                                    let formatted = if let Ok(val) =
+                                        serde_json::from_str::<serde_json::Value>(json_str)
+                                    {
+                                        serde_json::to_string_pretty(&val)
+                                            .unwrap_or_else(|_| json_str.to_string())
                                     } else {
                                         json_str.to_string()
                                     };
@@ -545,7 +565,6 @@ impl Details {
             }
         });
 
-
         // Connect click handler for inlinks / outlinks navigation
         let on_url_clicked_clone = on_url_clicked.clone();
         inlinks_list.connect_row_activated(move |_, row| {
@@ -579,7 +598,12 @@ impl Details {
         btn_suggest_title.connect_clicked(move |_| {
             if let Some(url) = active_url_clone.borrow().as_ref() {
                 if let Some(state) = crawl_state_clone.borrow().as_ref() {
-                    suggest_title_with_ai(url, state, val_title_clone.clone(), btn_suggest_title_clone.clone());
+                    suggest_title_with_ai(
+                        url,
+                        state,
+                        val_title_clone.clone(),
+                        btn_suggest_title_clone.clone(),
+                    );
                 }
             }
         });
@@ -591,7 +615,12 @@ impl Details {
         btn_suggest_desc.connect_clicked(move |_| {
             if let Some(url) = active_url_clone.borrow().as_ref() {
                 if let Some(state) = crawl_state_clone.borrow().as_ref() {
-                    suggest_desc_with_ai(url, state, val_desc_clone.clone(), btn_suggest_desc_clone.clone());
+                    suggest_desc_with_ai(
+                        url,
+                        state,
+                        val_desc_clone.clone(),
+                        btn_suggest_desc_clone.clone(),
+                    );
                 }
             }
         });
@@ -604,7 +633,8 @@ impl Details {
             if let Some(url) = active_url_clone.borrow().as_ref() {
                 if let Some(state) = crawl_state_clone.borrow().as_ref() {
                     if let Some(res) = state.get_result(url) {
-                        let root_window = notebook_weak.upgrade()
+                        let root_window = notebook_weak
+                            .upgrade()
                             .and_then(|nb| nb.root())
                             .and_downcast::<gtk::Window>();
                         export_inlinks_to_csv(&res.inlinks, root_window.as_ref());
@@ -620,7 +650,8 @@ impl Details {
             if let Some(url) = active_url_clone.borrow().as_ref() {
                 if let Some(state) = crawl_state_clone.borrow().as_ref() {
                     if let Some(res) = state.get_result(url) {
-                        let root_window = notebook_weak.upgrade()
+                        let root_window = notebook_weak
+                            .upgrade()
                             .and_then(|nb| nb.root())
                             .and_downcast::<gtk::Window>();
                         export_outlinks_to_csv(&res.outlinks, root_window.as_ref());
@@ -636,7 +667,8 @@ impl Details {
             if let Some(url) = active_url_clone.borrow().as_ref() {
                 if let Some(state) = crawl_state_clone.borrow().as_ref() {
                     if let Some(res) = state.get_result(url) {
-                        let root_window = notebook_weak.upgrade()
+                        let root_window = notebook_weak
+                            .upgrade()
                             .and_then(|nb| nb.root())
                             .and_downcast::<gtk::Window>();
                         export_images_to_csv(&res.images, root_window.as_ref());
@@ -647,19 +679,19 @@ impl Details {
 
         // --- Tab 7: Markdown Preview ---
         let md_outer_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        
+
         let md_toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         md_toolbar.set_margin_start(10);
         md_toolbar.set_margin_end(10);
         md_toolbar.set_margin_top(6);
         md_toolbar.set_margin_bottom(6);
-        
+
         let md_desc = gtk::Label::new(Some("Scraped subpage content in Markdown format"));
         md_desc.add_css_class("dim-label");
         md_desc.set_halign(gtk::Align::Start);
         md_desc.set_hexpand(true);
         md_toolbar.append(&md_desc);
-        
+
         let md_copy_btn = gtk::Button::builder()
             .label("Copy to Clipboard")
             .icon_name("edit-copy-symbolic")
@@ -667,7 +699,7 @@ impl Details {
             .sensitive(false)
             .build();
         md_toolbar.append(&md_copy_btn);
-        
+
         let md_save_btn = gtk::Button::builder()
             .label("Save as...")
             .icon_name("document-save-symbolic")
@@ -675,13 +707,13 @@ impl Details {
             .sensitive(false)
             .build();
         md_toolbar.append(&md_save_btn);
-        
+
         md_outer_box.append(&md_toolbar);
-        
+
         let md_scroll = gtk::ScrolledWindow::new();
         md_scroll.set_vexpand(true);
         md_scroll.set_hexpand(true);
-        
+
         let md_text_view = gtk::TextView::new();
         md_text_view.set_editable(false);
         md_text_view.set_monospace(true);
@@ -691,7 +723,7 @@ impl Details {
         md_text_view.set_margin_bottom(6);
         md_scroll.set_child(Some(&md_text_view));
         md_outer_box.append(&md_scroll);
-        
+
         notebook.append_page(&md_outer_box, Some(&gtk::Label::new(Some("Markdown"))));
 
         // Copy button — copies current raw text buffer content to clipboard
@@ -704,7 +736,7 @@ impl Details {
                 let display = gdk::Display::default().expect("Could not get GDK display");
                 let clipboard = display.clipboard();
                 clipboard.set_text(&text);
-                
+
                 md_copy_btn_clone.set_label("Copied!");
                 md_copy_btn_clone.set_icon_name("emblem-ok-symbolic");
                 let btn_reset = md_copy_btn_clone.clone();
@@ -721,36 +753,43 @@ impl Details {
         let notebook_weak = notebook.downgrade();
         md_save_btn.connect_clicked(move |_| {
             let buf = md_text_view_save.buffer();
-            let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string();
+            let text = buf
+                .text(&buf.start_iter(), &buf.end_iter(), false)
+                .to_string();
             if !text.is_empty() {
                 let dialog = gtk::FileDialog::new();
                 dialog.set_title("Save Markdown File");
-                
+
                 let default_name = if let Some(ref url) = *active_url_save.borrow() {
                     format!("{}.md", crate::crawler::get_slug_filename(url))
                 } else {
                     "content.md".to_string()
                 };
                 dialog.set_initial_name(Some(&default_name));
-                
+
                 let filter = gtk::FileFilter::new();
                 filter.set_name(Some("Markdown Files"));
                 filter.add_pattern("*.md");
                 let filters = gio::ListStore::new::<gtk::FileFilter>();
                 filters.append(&filter);
                 dialog.set_filters(Some(&filters));
-                
-                let root_window = notebook_weak.upgrade()
+
+                let root_window = notebook_weak
+                    .upgrade()
                     .and_then(|nb| nb.root())
                     .and_downcast::<gtk::Window>();
-                
-                dialog.save(root_window.as_ref(), None::<&gio::Cancellable>, move |result| {
-                    if let Ok(file) = result {
-                        if let Some(path) = file.path() {
-                            let _ = std::fs::write(path, text);
+
+                dialog.save(
+                    root_window.as_ref(),
+                    None::<&gio::Cancellable>,
+                    move |result| {
+                        if let Ok(file) = result {
+                            if let Some(path) = file.path() {
+                                let _ = std::fs::write(path, text);
+                            }
                         }
-                    }
-                });
+                    },
+                );
             }
         });
 
@@ -854,27 +893,43 @@ impl Details {
         *self.crawl_state.borrow_mut() = Some(state.clone());
 
         if let Some(res) = state.get_result(url) {
-            eprintln!("[Details Update] Found CrawlResult in state for URL: {}", url);
+            eprintln!(
+                "[Details Update] Found CrawlResult in state for URL: {}",
+                url
+            );
             // URL Info
             self.val_url.set_text(&res.url);
-            self.val_status.set_text(&res.status_code.map_or("Err/Unknown".to_string(), |c| c.to_string()));
+            self.val_status.set_text(
+                &res.status_code
+                    .map_or("Err/Unknown".to_string(), |c| c.to_string()),
+            );
             self.val_index.set_text(&res.indexability_status);
-            self.val_canonical.set_text(res.canonical.as_deref().unwrap_or("None"));
+            self.val_canonical
+                .set_text(res.canonical.as_deref().unwrap_or("None"));
 
             // Social / OG
-            self.val_og_title.set_text(res.og_title.as_deref().unwrap_or("None"));
-            self.val_og_desc.set_text(res.og_description.as_deref().unwrap_or("None"));
-            self.val_og_image.set_text(res.og_image.as_deref().unwrap_or("None"));
-            self.val_og_url.set_text(res.og_url.as_deref().unwrap_or("None"));
-            self.val_og_type.set_text(res.og_type.as_deref().unwrap_or("None"));
-            self.val_tw_title.set_text(res.twitter_title.as_deref().unwrap_or("None"));
-            self.val_tw_desc.set_text(res.twitter_description.as_deref().unwrap_or("None"));
-            self.val_tw_image.set_text(res.twitter_image.as_deref().unwrap_or("None"));
-            self.val_tw_card.set_text(res.twitter_card.as_deref().unwrap_or("None"));
+            self.val_og_title
+                .set_text(res.og_title.as_deref().unwrap_or("None"));
+            self.val_og_desc
+                .set_text(res.og_description.as_deref().unwrap_or("None"));
+            self.val_og_image
+                .set_text(res.og_image.as_deref().unwrap_or("None"));
+            self.val_og_url
+                .set_text(res.og_url.as_deref().unwrap_or("None"));
+            self.val_og_type
+                .set_text(res.og_type.as_deref().unwrap_or("None"));
+            self.val_tw_title
+                .set_text(res.twitter_title.as_deref().unwrap_or("None"));
+            self.val_tw_desc
+                .set_text(res.twitter_description.as_deref().unwrap_or("None"));
+            self.val_tw_image
+                .set_text(res.twitter_image.as_deref().unwrap_or("None"));
+            self.val_tw_card
+                .set_text(res.twitter_card.as_deref().unwrap_or("None"));
 
             // Calculate diagnostics
             let mut diags = vec![];
-            
+
             // Check missing essential OG tags
             if res.og_title.is_none() {
                 diags.push("Missing og:title tag.".to_string());
@@ -885,13 +940,16 @@ impl Details {
                     }
                 }
             }
-            
+
             if res.og_description.is_none() {
                 diags.push("Missing og:description tag.".to_string());
             } else if let Some(ref og_d) = res.og_description {
                 if let Some(ref d) = res.meta_desc {
                     if og_d != d {
-                        diags.push("Warning: og:description does not match HTML meta description.".to_string());
+                        diags.push(
+                            "Warning: og:description does not match HTML meta description."
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -905,7 +963,8 @@ impl Details {
             }
 
             if diags.is_empty() {
-                self.val_social_diag.set_text("All Open Graph and Twitter Card tags are correctly configured.");
+                self.val_social_diag
+                    .set_text("All Open Graph and Twitter Card tags are correctly configured.");
                 self.val_social_diag.remove_css_class("error");
                 self.val_social_diag.add_css_class("success");
             } else {
@@ -913,14 +972,18 @@ impl Details {
                 self.val_social_diag.add_css_class("error");
                 self.val_social_diag.remove_css_class("success");
             }
-            
+
             // Title suggests
             if res.title.as_ref().map_or(true, |t| t.trim().is_empty()) {
                 self.val_title.set_text("[Missing Page Title]");
                 self.btn_suggest_title.set_visible(true);
             } else {
                 let t_len = res.title.as_ref().map_or(0, |t| t.chars().count());
-                self.val_title.set_text(&format!("{} ({} chars)", res.title.as_deref().unwrap_or("None"), t_len));
+                self.val_title.set_text(&format!(
+                    "{} ({} chars)",
+                    res.title.as_deref().unwrap_or("None"),
+                    t_len
+                ));
                 self.btn_suggest_title.set_visible(false);
             }
 
@@ -930,13 +993,21 @@ impl Details {
                 self.btn_suggest_desc.set_visible(true);
             } else {
                 let d_len = res.meta_desc.as_ref().map_or(0, |d| d.chars().count());
-                self.val_desc.set_text(&format!("{} ({} chars)", res.meta_desc.as_deref().unwrap_or("None"), d_len));
+                self.val_desc.set_text(&format!(
+                    "{} ({} chars)",
+                    res.meta_desc.as_deref().unwrap_or("None"),
+                    d_len
+                ));
                 self.btn_suggest_desc.set_visible(false);
             }
 
             // H1 details
             let h1_text = if res.h1_count > 1 {
-                format!("{} (Multiple tags: {} found)", res.h1.as_deref().unwrap_or("None"), res.h1_count)
+                format!(
+                    "{} (Multiple tags: {} found)",
+                    res.h1.as_deref().unwrap_or("None"),
+                    res.h1_count
+                )
             } else {
                 res.h1.clone().unwrap_or_else(|| "None".to_string())
             };
@@ -944,14 +1015,19 @@ impl Details {
 
             // H2 details
             let h2_text = if res.h2_count > 1 {
-                format!("{} (Multiple tags: {} found)", res.h2.as_deref().unwrap_or("None"), res.h2_count)
+                format!(
+                    "{} (Multiple tags: {} found)",
+                    res.h2.as_deref().unwrap_or("None"),
+                    res.h2_count
+                )
             } else {
                 res.h2.clone().unwrap_or_else(|| "None".to_string())
             };
             self.val_h2.set_text(&h2_text);
 
             self.val_words.set_text(&res.word_count.to_string());
-            self.val_size.set_text(&format!("{:.2} KB", res.size_bytes as f64 / 1024.0));
+            self.val_size
+                .set_text(&format!("{:.2} KB", res.size_bytes as f64 / 1024.0));
 
             // Inlinks
             for inlink in &res.inlinks {
@@ -961,7 +1037,7 @@ impl Details {
                 lbl.set_margin_end(10);
                 lbl.set_margin_top(4);
                 lbl.set_margin_bottom(4);
-                
+
                 let list_row = gtk::ListBoxRow::new();
                 list_row.set_child(Some(&lbl));
                 self.inlinks_list.append(&list_row);
@@ -997,26 +1073,30 @@ impl Details {
                 let alt_text = img.alt.as_deref().unwrap_or("[Missing Alt Text]");
                 let alt_lbl = gtk::Label::new(Some(alt_text));
                 alt_lbl.set_halign(gtk::Align::End);
-                
+
                 if img.alt.is_none() {
                     alt_lbl.add_css_class("error");
-                    
-                    let suggest_alt_btn = gtk::Button::builder()
-                        .label("Suggest Alt")
-                        .build();
+
+                    let suggest_alt_btn = gtk::Button::builder().label("Suggest Alt").build();
                     suggest_alt_btn.add_css_class("flat");
-                    
+
                     let img_src = img.src.clone();
                     let page_url = url.to_string();
                     let state_clone = state.clone();
                     let alt_lbl_clone = alt_lbl.clone();
                     let suggest_alt_btn_clone = suggest_alt_btn.clone();
-                    
+
                     suggest_alt_btn.connect_clicked(move |_| {
-                        suggest_alt_text_with_ai(&page_url, &img_src, &state_clone, alt_lbl_clone.clone(), suggest_alt_btn_clone.clone());
+                        suggest_alt_text_with_ai(
+                            &page_url,
+                            &img_src,
+                            &state_clone,
+                            alt_lbl_clone.clone(),
+                            suggest_alt_btn_clone.clone(),
+                        );
                     });
-                    
-                    img_box.append(&suggest_alt_btn);
+
+                    img_box.append(&ai_action_group(&suggest_alt_btn));
                 } else {
                     alt_lbl.add_css_class("dim-label");
                 }
@@ -1058,9 +1138,16 @@ impl Details {
                     badge.set_width_chars(3);
                     badge.add_css_class("numeric");
                     match heading.level {
-                        1 => { badge.add_css_class("accent"); badge.add_css_class("bold"); }
-                        2 => { badge.add_css_class("bold"); }
-                        _ => { badge.add_css_class("dim-label"); }
+                        1 => {
+                            badge.add_css_class("accent");
+                            badge.add_css_class("bold");
+                        }
+                        2 => {
+                            badge.add_css_class("bold");
+                        }
+                        _ => {
+                            badge.add_css_class("dim-label");
+                        }
                     }
                     row_box.append(&badge);
 
@@ -1106,7 +1193,8 @@ impl Details {
                     row_box.set_margin_bottom(6);
 
                     let title_lbl = gtk::Label::new(Some(&format!(
-                        "All Blocks ({} total)", res.schema_json_ld.len()
+                        "All Blocks ({} total)",
+                        res.schema_json_ld.len()
                     )));
                     title_lbl.set_halign(gtk::Align::Start);
                     title_lbl.add_css_class("bold");
@@ -1124,28 +1212,29 @@ impl Details {
 
                 for (idx, json_str) in res.schema_json_ld.iter().enumerate() {
                     let (types, contexts) = get_schema_summary(json_str);
-                    
+
                     let row_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                     row_box.set_margin_start(10);
                     row_box.set_margin_end(10);
                     row_box.set_margin_top(6);
                     row_box.set_margin_bottom(6);
-                    
-                    let title_lbl = gtk::Label::new(Some(&format!("Schema Block #{} ({})", idx + 1, types)));
+
+                    let title_lbl =
+                        gtk::Label::new(Some(&format!("Schema Block #{} ({})", idx + 1, types)));
                     title_lbl.set_halign(gtk::Align::Start);
                     title_lbl.add_css_class("bold");
                     row_box.append(&title_lbl);
-                    
+
                     let ctx_lbl = gtk::Label::new(Some(&format!("Context: {}", contexts)));
                     ctx_lbl.set_halign(gtk::Align::Start);
                     ctx_lbl.add_css_class("dim-label");
                     row_box.append(&ctx_lbl);
-                    
+
                     let list_row = gtk::ListBoxRow::new();
                     list_row.set_child(Some(&row_box));
                     self.schema_list.append(&list_row);
                 }
-                
+
                 // Select "All Blocks" row by default
                 if let Some(first_row) = self.schema_all_list.row_at_index(0) {
                     self.schema_all_list.select_row(Some(&first_row));
@@ -1154,7 +1243,8 @@ impl Details {
 
             // Schema errors
             if res.schema_errors.is_empty() {
-                let success_lbl = gtk::Label::new(Some("✓ No validation errors or warnings found."));
+                let success_lbl =
+                    gtk::Label::new(Some("✓ No validation errors or warnings found."));
                 success_lbl.add_css_class("success");
                 success_lbl.set_halign(gtk::Align::Start);
                 success_lbl.set_margin_start(10);
@@ -1191,7 +1281,10 @@ impl Details {
                 self.md_save_btn.set_sensitive(false);
             }
         } else {
-            eprintln!("[Details Update] NO CrawlResult found in state for URL: {}", url);
+            eprintln!(
+                "[Details Update] NO CrawlResult found in state for URL: {}",
+                url
+            );
         }
     }
 
@@ -1224,8 +1317,6 @@ impl Details {
         val_lbl
     }
 
-
-
     fn add_info_row_with_action(list_box: &gtk::ListBox, title: &str) -> (gtk::Label, gtk::Button) {
         let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 15);
         row_box.set_margin_start(10);
@@ -1252,7 +1343,7 @@ impl Details {
             .visible(false)
             .build();
         action_btn.add_css_class("flat");
-        row_box.append(&action_btn);
+        row_box.append(&ai_action_group(&action_btn));
 
         let list_row = gtk::ListBoxRow::new();
         list_row.set_child(Some(&row_box));
@@ -1269,8 +1360,31 @@ impl Details {
     }
 }
 
+fn ai_action_group(button: &gtk::Button) -> gtk::Box {
+    let group = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    group.append(button);
+    let disclosure = gtk::Label::builder()
+        .label("Sends page text to your AI provider")
+        .wrap(true)
+        .max_width_chars(20)
+        .css_classes(["dim-label"])
+        .build();
+    group.append(&disclosure);
+    button.set_tooltip_text(Some("Sends the page URL, metadata, headings and up to 12,000 characters of page text to the configured AI provider. This uses your API balance."));
+    button
+        .bind_property("visible", &group, "visible")
+        .sync_create()
+        .build();
+    group
+}
+
 // AI helpers
-fn suggest_title_with_ai(page_url: &str, state: &CrawlState, val_lbl: gtk::Label, btn: gtk::Button) {
+fn suggest_title_with_ai(
+    page_url: &str,
+    state: &CrawlState,
+    val_lbl: gtk::Label,
+    btn: gtk::Button,
+) {
     let config = state.get_config();
     let api_key = match config.ai_api_key {
         Some(ref k) if !k.is_empty() => k.clone(),
@@ -1279,22 +1393,26 @@ fn suggest_title_with_ai(page_url: &str, state: &CrawlState, val_lbl: gtk::Label
             return;
         }
     };
-    
+
     btn.set_sensitive(false);
     btn.set_label("Generating...");
-    
-    let page_url = page_url.to_string();
+
+    let page_url = state
+        .get_result(page_url)
+        .as_ref()
+        .map(crate::ai::page_context)
+        .unwrap_or_else(|| page_url.to_string());
     let provider = config.ai_provider.clone();
     let model = config.ai_model.clone();
-    
+
     glib::MainContext::default().spawn_local(async move {
         let prompt = format!(
             "Suggest a high-density, SEO-friendly page Title tag (max 60 characters) for the webpage with URL: '{}'. Respond with ONLY the suggested title, no quotes, no explanations.",
             page_url
         );
-        
+
         let res = call_ai_api(&provider, &api_key, &model, &prompt).await;
-        
+
         btn.set_sensitive(true);
         btn.set_label("Suggest with AI");
         match res {
@@ -1318,22 +1436,26 @@ fn suggest_desc_with_ai(page_url: &str, state: &CrawlState, val_lbl: gtk::Label,
             return;
         }
     };
-    
+
     btn.set_sensitive(false);
     btn.set_label("Generating...");
-    
-    let page_url = page_url.to_string();
+
+    let page_url = state
+        .get_result(page_url)
+        .as_ref()
+        .map(crate::ai::page_context)
+        .unwrap_or_else(|| page_url.to_string());
     let provider = config.ai_provider.clone();
     let model = config.ai_model.clone();
-    
+
     glib::MainContext::default().spawn_local(async move {
         let prompt = format!(
             "Suggest a compelling, click-worthy Meta Description (max 155 characters) for the webpage with URL: '{}'. Respond with ONLY the suggested meta description, no quotes, no explanations.",
             page_url
         );
-        
+
         let res = call_ai_api(&provider, &api_key, &model, &prompt).await;
-        
+
         btn.set_sensitive(true);
         btn.set_label("Suggest with AI");
         match res {
@@ -1348,7 +1470,13 @@ fn suggest_desc_with_ai(page_url: &str, state: &CrawlState, val_lbl: gtk::Label,
     });
 }
 
-fn suggest_alt_text_with_ai(page_url: &str, img_src: &str, state: &CrawlState, alt_lbl: gtk::Label, btn: gtk::Button) {
+fn suggest_alt_text_with_ai(
+    page_url: &str,
+    img_src: &str,
+    state: &CrawlState,
+    alt_lbl: gtk::Label,
+    btn: gtk::Button,
+) {
     let config = state.get_config();
     let api_key = match config.ai_api_key {
         Some(ref k) if !k.is_empty() => k.clone(),
@@ -1357,23 +1485,27 @@ fn suggest_alt_text_with_ai(page_url: &str, img_src: &str, state: &CrawlState, a
             return;
         }
     };
-    
+
     btn.set_sensitive(false);
     btn.set_label("Generating...");
-    
-    let page_url = page_url.to_string();
+
+    let page_url = state
+        .get_result(page_url)
+        .as_ref()
+        .map(crate::ai::page_context)
+        .unwrap_or_else(|| page_url.to_string());
     let img_src = img_src.to_string();
     let provider = config.ai_provider.clone();
     let model = config.ai_model.clone();
-    
+
     glib::MainContext::default().spawn_local(async move {
         let prompt = format!(
             "Suggest a concise and SEO-friendly image alt text (max 12 words) for the image with URL: '{}' located on the webpage: '{}'. Respond with ONLY the suggested alt text, no quotes, no explanations.",
             img_src, page_url
         );
-        
+
         let res = call_ai_api(&provider, &api_key, &model, &prompt).await;
-        
+
         btn.set_sensitive(true);
         btn.set_label("Suggest Alt");
         match res {
@@ -1390,51 +1522,19 @@ fn suggest_alt_text_with_ai(page_url: &str, img_src: &str, state: &CrawlState, a
     });
 }
 
-async fn call_ai_api(provider: &str, api_key: &str, model: &str, prompt: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::new();
-    let url = if provider == "OpenRouter" {
-        "https://openrouter.ai/api/v1/chat/completions"
-    } else {
-        "https://api.openai.com/v1/chat/completions"
+async fn call_ai_api(
+    provider: &str,
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+) -> crate::ai::ApiResult<String> {
+    let config = crate::state::CrawlConfig {
+        ai_provider: provider.into(),
+        ai_api_key: Some(api_key.into()),
+        ai_model: model.into(),
+        ..Default::default()
     };
-
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.7
-    });
-
-    let mut request = client.post(url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key));
-        
-    if provider == "OpenRouter" {
-        request = request
-            .header("HTTP-Referer", "https://github.com/local-seo-crawler")
-            .header("X-Title", "Local SEO Crawler");
-    }
-
-    let response = request.json(&body).send().await?;
-    let status = response.status();
-    let text = response.text().await?;
-
-    if !status.is_success() {
-        return Err(format!("API returned status {}: {}", status, text).into());
-    }
-
-    let parsed_res: serde_json::Value = serde_json::from_str(&text)?;
-    let content = parsed_res["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or_else(|| Box::<dyn std::error::Error + Send + Sync>::from("Failed to parse completion content"))?
-        .trim()
-        .to_string();
-
-    Ok(content)
+    crate::ai::AiClient::new()?.complete(&config, prompt).await
 }
 
 // Export helpers
@@ -1442,7 +1542,7 @@ fn export_inlinks_to_csv(inlinks: &[String], parent_window: Option<&gtk::Window>
     let dialog = gtk::FileDialog::new();
     dialog.set_title("Export Inlinks to CSV");
     dialog.set_initial_name(Some("inlinks.csv"));
-    
+
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("CSV Files"));
     filter.add_pattern("*.csv");
@@ -1473,7 +1573,7 @@ fn export_outlinks_to_csv(outlinks: &[String], parent_window: Option<&gtk::Windo
     let dialog = gtk::FileDialog::new();
     dialog.set_title("Export Outlinks to CSV");
     dialog.set_initial_name(Some("outlinks.csv"));
-    
+
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("CSV Files"));
     filter.add_pattern("*.csv");
@@ -1504,7 +1604,7 @@ fn export_images_to_csv(images: &[ImageInfo], parent_window: Option<&gtk::Window
     let dialog = gtk::FileDialog::new();
     dialog.set_title("Export Images to CSV");
     dialog.set_initial_name(Some("images.csv"));
-    
+
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("CSV Files"));
     filter.add_pattern("*.csv");
@@ -1525,7 +1625,7 @@ fn export_images_to_csv(images: &[ImageInfo], parent_window: Option<&gtk::Window
                         let _ = wtr.write_record(&[
                             img.src,
                             img.alt.unwrap_or_default(),
-                            img.local_path.unwrap_or_default()
+                            img.local_path.unwrap_or_default(),
                         ]);
                     }
                     let _ = wtr.flush();
@@ -1544,7 +1644,10 @@ fn get_schema_summary(json_str: &str) -> (String, String) {
                     .collect::<Vec<_>>()
                     .join(", ")
             } else {
-                v.get("@type").and_then(|t| t.as_str()).unwrap_or("Unknown").to_string()
+                v.get("@type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
             }
         };
 
@@ -1555,14 +1658,25 @@ fn get_schema_summary(json_str: &str) -> (String, String) {
                     .collect::<Vec<_>>()
                     .join(", ")
             } else {
-                v.get("@context").and_then(|c| c.as_str()).unwrap_or("schema.org").to_string()
+                v.get("@context")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("schema.org")
+                    .to_string()
             }
         };
 
         if let Some(arr) = val.as_array() {
             if !arr.is_empty() {
-                let types = arr.iter().map(|item| get_types(item)).collect::<Vec<_>>().join(" + ");
-                let contexts = arr.iter().map(|item| get_contexts(item)).collect::<Vec<_>>().join(" + ");
+                let types = arr
+                    .iter()
+                    .map(|item| get_types(item))
+                    .collect::<Vec<_>>()
+                    .join(" + ");
+                let contexts = arr
+                    .iter()
+                    .map(|item| get_contexts(item))
+                    .collect::<Vec<_>>()
+                    .join(" + ");
                 return (types, contexts);
             }
         } else if val.is_object() {

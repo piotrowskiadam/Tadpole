@@ -28,9 +28,7 @@ pub enum RustToRendererMessage {
         nodes: Vec<NodeWireFormat>,
     },
     #[serde(rename = "loadEdgeChunk")]
-    LoadEdgeChunk {
-        edges: Vec<EdgeWireFormat>,
-    },
+    LoadEdgeChunk { edges: Vec<EdgeWireFormat> },
     #[serde(rename = "setLayout")]
     SetLayout {
         layout: String,
@@ -47,9 +45,7 @@ pub enum RustToRendererMessage {
         focus_camera: bool,
     },
     #[serde(rename = "exportImage")]
-    ExportImage {
-        format: String,
-    },
+    ExportImage { format: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,13 +91,9 @@ pub enum RendererToRustMessage {
     #[serde(rename = "ready")]
     Ready,
     #[serde(rename = "nodeHovered")]
-    NodeHovered {
-        node_id: Option<NodeId>,
-    },
+    NodeHovered { node_id: Option<NodeId> },
     #[serde(rename = "nodeSelected")]
-    NodeSelected {
-        node_id: Option<NodeId>,
-    },
+    NodeSelected { node_id: Option<NodeId> },
     #[serde(rename = "renderStats")]
     RenderStats {
         fps: f32,
@@ -109,10 +101,7 @@ pub enum RendererToRustMessage {
         rendered_edges: usize,
     },
     #[serde(rename = "error")]
-    Error {
-        code: String,
-        message: String,
-    },
+    Error { code: String, message: String },
 }
 
 impl RustToRendererMessage {
