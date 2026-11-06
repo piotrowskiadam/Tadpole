@@ -12,6 +12,10 @@ A local desktop SEO crawler built with Rust, GTK4 and Libadwaita. Audit a websit
   </a>
 </p>
 
+## How Tadpole is developed
+
+Tadpole is developed primarily by orchestrating AI coding agents, including Google's Antigravity, OpenAI's Codex, and OpenCode. An SEO professional with many years of experience sets the feature direction and checks the application after each update. Read the [AI development disclosure](AI_DISCLOSURE.md) for the scope and the distinction from the optional AI features inside the app.
+
 ## Website audits
 
 - Crawl a site, a path, one URL, or an explicit list of URLs.

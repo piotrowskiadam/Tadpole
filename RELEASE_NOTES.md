@@ -8,6 +8,10 @@ This release modernizes the crawler and adds a native site-visualization workspa
 - Use optional page-level OpenRouter or OpenAI metadata suggestions. Paid AI requests are initiated explicitly.
 - Benefit from crawler lifecycle, persistence, accessibility, documentation, and validation improvements.
 
+## AI development disclosure
+
+Tadpole is developed primarily by orchestrating AI coding agents. An experienced SEO professional sets the direction and checks each update. Read the [AI development disclosure](https://github.com/piotrowskiadam/Tadpole/blob/main/AI_DISCLOSURE.md) for details.
+
 ## Before upgrading
 
 API credentials are no longer saved in project files and must be entered again for each session. Older project files may still contain previously saved keys: remove those keys and rotate them if the files were shared. The former standalone SEO Studio workspace has been removed.
