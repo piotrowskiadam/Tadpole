@@ -1,6 +1,8 @@
 # Tadpole releases
 
-Tadpole includes a native site-visualization workspace and local SEO audit tools. Version-specific changes are listed in the automatically generated notes below.
+Tadpole provides an upstream Flatpak bundle alongside the other Linux and Windows packages. The bundle is distributed through GitHub and is not a Flathub submission. Version-specific changes are listed in the automatically generated notes below.
+
+Tadpole includes a native site-visualization workspace and local SEO audit tools:
 
 - Explore directory treemaps and icicles, shortest-path trees, URL link neighborhoods, section-link matrices, and depth versus internal rank.
 - Prepare visualizations in the background, cache drawing geometry, and inspect results in a searchable, paginated evidence list.

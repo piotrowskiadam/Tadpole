@@ -12,7 +12,7 @@ Known AI-assisted work in this repository during the 2026 modernization includes
 
 The existing native packages use `com.tadpole.seo`. Its corresponding domain ownership has not been established. A human should independently choose an appropriate ID under [Flathub's application-ID rules](https://docs.flathub.org/docs/for-app-authors/requirements#application-id), and confirm ownership and suitability. This branch makes the application use the ID provided by Flatpak in `FLATPAK_ID`, retaining the original ID for the existing desktop packages. The icon follows the application ID. The human-authored packaging must install a matching desktop file and icon, and use the same ID in the AppStream metadata. No claim of Flathub verification is made.
 
-The identity change is **after** GitHub release 0.4.0. A subsequent stable upstream tag containing it is needed before a Flathub submission can be pinned to that source. The separate, AI-assisted upstream Flatpak bundle has been built locally and in GitHub Actions; it is not a Flathub submission and its manifest must not be reused for one.
+The identity change is **after** GitHub release 0.4.0. A Flathub submission must pin a stable upstream tag containing it, such as v0.4.1 or later. The separate, AI-assisted upstream Flatpak bundle has been built locally and in GitHub Actions; it is not a Flathub submission and its manifest must not be reused for one.
 
 ## Functional work to validate
 
