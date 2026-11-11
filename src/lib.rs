@@ -2,6 +2,7 @@ pub mod ai;
 pub mod crawler;
 pub mod filters;
 mod http;
+pub mod inspection;
 pub mod markdown;
 pub mod project;
 pub mod robots;

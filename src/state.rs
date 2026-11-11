@@ -7,6 +7,23 @@ pub struct ImageInfo {
     pub src: String,
     pub alt: Option<String>,
     pub local_path: Option<String>,
+    /// Dimensions declared in HTML, not measured image resolution.
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub loading: Option<String>,
+}
+
+/// One link occurrence. Crawl graph URLs remain fragment-free; targets here preserve fragments.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinkInfo {
+    pub target: String,
+    pub anchor: String,
+    pub rel: String,
 }
 
 /// A single heading element (H1–H6) extracted in document order.
@@ -34,6 +51,11 @@ pub struct CrawlResult {
     pub canonical: Option<String>,
     pub inlinks: Vec<String>,
     pub outlinks: Vec<String>,
+    #[serde(default)]
+    pub link_details: Vec<LinkInfo>,
+    /// First value of each declared OG / Twitter tag, including image dimensions and alt text.
+    #[serde(default)]
+    pub social_metadata: std::collections::BTreeMap<String, String>,
     pub images: Vec<ImageInfo>,
     pub depth: usize,
     pub response_time_ms: u32,
@@ -79,6 +101,8 @@ impl CrawlResult {
             canonical: None,
             inlinks: vec![],
             outlinks: vec![],
+            link_details: vec![],
+            social_metadata: Default::default(),
             images: vec![],
             depth,
             response_time_ms,

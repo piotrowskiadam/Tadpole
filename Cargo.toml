@@ -59,3 +59,7 @@ assets = [
 [[example]]
 name = "ui_preview"
 required-features = ["desktop"]
+
+[[example]]
+name = "details_preview"
+required-features = ["desktop"]

@@ -1,5 +1,7 @@
+use super::detail_table::{DetailTable, wrapped_label};
+use crate::inspection::{self, LinkRow};
 use crate::state::{CrawlState, ImageInfo};
-use gtk::prelude::*;
+use adw::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -33,13 +35,18 @@ pub struct Details {
     val_social_diag: gtk::Label,
 
     // Inlinks Tab widgets
-    inlinks_list: gtk::ListBox,
+    inlinks_table: DetailTable,
+    inlinks_lbl: gtk::Label,
 
     // Outlinks Tab widgets
-    outlinks_list: gtk::ListBox,
+    outlinks_table: DetailTable,
+    outlinks_lbl: gtk::Label,
 
     // Images Tab widgets
-    images_list: gtk::ListBox,
+    images_table: DetailTable,
+    images_lbl: gtk::Label,
+    social_previews: gtk::Box,
+    social_extra: gtk::ListBox,
 
     // Headings Tab widgets
     headings_list: gtk::ListBox,
@@ -66,6 +73,7 @@ impl Details {
     pub fn new() -> Self {
         let notebook = gtk::Notebook::new();
         notebook.set_vexpand(true);
+        notebook.set_scrollable(true);
         notebook.set_height_request(220);
 
         let on_url_clicked: Rc<RefCell<Option<Box<dyn Fn(String)>>>> = Rc::new(RefCell::new(None));
@@ -74,6 +82,7 @@ impl Details {
 
         // --- Tab 1: URL Info ---
         let info_scroll = gtk::ScrolledWindow::new();
+        info_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         let info_list = gtk::ListBox::new();
         info_list.add_css_class("boxed-list");
         info_list.set_margin_start(10);
@@ -111,17 +120,19 @@ impl Details {
         inlinks_lbl.add_css_class("dim-label");
         inlinks_lbl.set_halign(gtk::Align::Start);
         inlinks_lbl.set_hexpand(true);
+        inlinks_lbl.set_wrap(true);
+        inlinks_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        inlinks_lbl.set_halign(gtk::Align::Fill);
+        inlinks_lbl.set_xalign(0.);
+        inlinks_lbl.set_width_chars(1);
         inlinks_toolbar.append(&inlinks_lbl);
 
         let inlinks_export_btn = gtk::Button::builder().label("Export CSV").build();
         inlinks_toolbar.append(&inlinks_export_btn);
         inlinks_box.append(&inlinks_toolbar);
 
-        let inlinks_scroll = gtk::ScrolledWindow::new();
-        inlinks_scroll.set_vexpand(true);
-        let inlinks_list = gtk::ListBox::new();
-        inlinks_scroll.set_child(Some(&inlinks_list));
-        inlinks_box.append(&inlinks_scroll);
+        let inlinks_table = link_table();
+        inlinks_box.append(&inlinks_table.scroll);
         notebook.append_page(&inlinks_box, Some(&gtk::Label::new(Some("Inlinks"))));
 
         // --- Tab 3: Outlinks ---
@@ -136,17 +147,19 @@ impl Details {
         outlinks_lbl.add_css_class("dim-label");
         outlinks_lbl.set_halign(gtk::Align::Start);
         outlinks_lbl.set_hexpand(true);
+        outlinks_lbl.set_wrap(true);
+        outlinks_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        outlinks_lbl.set_halign(gtk::Align::Fill);
+        outlinks_lbl.set_xalign(0.);
+        outlinks_lbl.set_width_chars(1);
         outlinks_toolbar.append(&outlinks_lbl);
 
         let outlinks_export_btn = gtk::Button::builder().label("Export CSV").build();
         outlinks_toolbar.append(&outlinks_export_btn);
         outlinks_box.append(&outlinks_toolbar);
 
-        let outlinks_scroll = gtk::ScrolledWindow::new();
-        outlinks_scroll.set_vexpand(true);
-        let outlinks_list = gtk::ListBox::new();
-        outlinks_scroll.set_child(Some(&outlinks_list));
-        outlinks_box.append(&outlinks_scroll);
+        let outlinks_table = link_table();
+        outlinks_box.append(&outlinks_table.scroll);
         notebook.append_page(&outlinks_box, Some(&gtk::Label::new(Some("Outlinks"))));
 
         // --- Tab 4: Images ---
@@ -161,28 +174,50 @@ impl Details {
         images_lbl.add_css_class("dim-label");
         images_lbl.set_halign(gtk::Align::Start);
         images_lbl.set_hexpand(true);
+        images_lbl.set_wrap(true);
+        images_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        images_lbl.set_halign(gtk::Align::Fill);
+        images_lbl.set_xalign(0.);
+        images_lbl.set_width_chars(1);
         images_toolbar.append(&images_lbl);
 
         let images_export_btn = gtk::Button::builder().label("Export CSV").build();
         images_toolbar.append(&images_export_btn);
         images_box.append(&images_toolbar);
 
-        let images_scroll = gtk::ScrolledWindow::new();
-        images_scroll.set_vexpand(true);
-        let images_list = gtk::ListBox::new();
-        images_scroll.set_child(Some(&images_list));
-        images_box.append(&images_scroll);
+        let images_table = image_table();
+        images_box.append(&images_table.scroll);
         notebook.append_page(&images_box, Some(&gtk::Label::new(Some("Images"))));
 
         // --- Tab 5: Social / OG ---
         let social_scroll = gtk::ScrolledWindow::new();
+        social_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         let social_list = gtk::ListBox::new();
         social_list.add_css_class("boxed-list");
         social_list.set_margin_start(10);
         social_list.set_margin_end(10);
         social_list.set_margin_top(10);
         social_list.set_margin_bottom(10);
-        social_scroll.set_child(Some(&social_list));
+        let social_content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        let preview_note = wrapped_label(
+            "Illustrative previews using declared metadata; social platforms may render differently. Images load when visible.",
+        );
+        preview_note.add_css_class("dim-label");
+        social_content.append(&preview_note);
+        let social_previews = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        social_previews.set_homogeneous(true);
+        social_previews.set_margin_start(10);
+        social_previews.set_margin_end(10);
+        social_content.append(&social_previews);
+        social_content.append(&social_list);
+        let social_extra = gtk::ListBox::new();
+        social_extra.add_css_class("boxed-list");
+        social_extra.set_selection_mode(gtk::SelectionMode::None);
+        social_extra.set_margin_start(10);
+        social_extra.set_margin_end(10);
+        social_extra.set_margin_bottom(10);
+        social_content.append(&social_extra);
+        social_scroll.set_child(Some(&social_content));
 
         let val_og_title = Self::add_info_row(&social_list, "og:title");
         let val_og_desc = Self::add_info_row(&social_list, "og:description");
@@ -210,6 +245,11 @@ impl Details {
         headings_desc.add_css_class("dim-label");
         headings_desc.set_halign(gtk::Align::Start);
         headings_desc.set_hexpand(true);
+        headings_desc.set_wrap(true);
+        headings_desc.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        headings_desc.set_halign(gtk::Align::Fill);
+        headings_desc.set_xalign(0.);
+        headings_desc.set_width_chars(1);
         headings_toolbar.append(&headings_desc);
 
         let headings_copy_btn = gtk::Button::builder()
@@ -257,6 +297,7 @@ impl Details {
         headings_outer.append(&headings_toolbar);
 
         let headings_scroll = gtk::ScrolledWindow::new();
+        headings_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         headings_scroll.set_vexpand(true);
         let headings_list = gtk::ListBox::new();
         headings_list.set_selection_mode(gtk::SelectionMode::None);
@@ -300,6 +341,7 @@ impl Details {
         left_box.append(&schema_lbl);
 
         let schema_list_scroll = gtk::ScrolledWindow::new();
+        schema_list_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         schema_list_scroll.set_vexpand(true);
         let schema_list = gtk::ListBox::new();
         schema_list.add_css_class("boxed-list");
@@ -312,6 +354,7 @@ impl Details {
         left_box.append(&diag_lbl);
 
         let schema_errors_scroll = gtk::ScrolledWindow::new();
+        schema_errors_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         schema_errors_scroll.set_height_request(100);
         let schema_errors_list = gtk::ListBox::new();
         schema_errors_list.add_css_class("boxed-list");
@@ -340,11 +383,13 @@ impl Details {
         right_box.append(&raw_header);
 
         let raw_scroll = gtk::ScrolledWindow::new();
+        raw_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         raw_scroll.set_vexpand(true);
         raw_scroll.set_hexpand(true);
         let schema_raw_text = gtk::TextView::new();
         schema_raw_text.set_editable(false);
         schema_raw_text.set_monospace(true);
+        schema_raw_text.set_wrap_mode(gtk::WrapMode::WordChar);
         raw_scroll.set_child(Some(&schema_raw_text));
         right_box.append(&raw_scroll);
 
@@ -565,30 +610,19 @@ impl Details {
             }
         });
 
-        // Connect click handler for inlinks / outlinks navigation
-        let on_url_clicked_clone = on_url_clicked.clone();
-        inlinks_list.connect_row_activated(move |_, row| {
-            if let Some(child) = row.child() {
-                if let Some(label) = child.downcast_ref::<gtk::Label>() {
-                    let url = label.text().to_string();
-                    if let Some(ref cb) = *on_url_clicked_clone.borrow() {
-                        cb(url);
+        for (table, inbound) in [(&inlinks_table, true), (&outlinks_table, false)] {
+            let callback = on_url_clicked.clone();
+            let store = table.store.clone();
+            table.view.connect_activate(move |_, position| {
+                if let Some(item) = store.item(position).and_downcast::<glib::BoxedAnyObject>() {
+                    let row = item.borrow::<LinkRow>();
+                    let url = if inbound { &row.source } else { &row.target };
+                    if let Some(callback) = callback.borrow().as_ref() {
+                        callback(inspection::without_fragment(url));
                     }
                 }
-            }
-        });
-
-        let on_url_clicked_clone = on_url_clicked.clone();
-        outlinks_list.connect_row_activated(move |_, row| {
-            if let Some(child) = row.child() {
-                if let Some(label) = child.downcast_ref::<gtk::Label>() {
-                    let url = label.text().to_string();
-                    if let Some(ref cb) = *on_url_clicked_clone.borrow() {
-                        cb(url);
-                    }
-                }
-            }
-        });
+            });
+        }
 
         // Wire up suggestion buttons
         let active_url_clone = active_url.clone();
@@ -637,7 +671,11 @@ impl Details {
                             .upgrade()
                             .and_then(|nb| nb.root())
                             .and_downcast::<gtk::Window>();
-                        export_inlinks_to_csv(&res.inlinks, root_window.as_ref());
+                        export_links_to_csv(
+                            inspection::inlinks(&res, state),
+                            "inlinks.csv",
+                            root_window.as_ref(),
+                        );
                     }
                 }
             }
@@ -654,7 +692,11 @@ impl Details {
                             .upgrade()
                             .and_then(|nb| nb.root())
                             .and_downcast::<gtk::Window>();
-                        export_outlinks_to_csv(&res.outlinks, root_window.as_ref());
+                        export_links_to_csv(
+                            inspection::outlinks(&res),
+                            "outlinks.csv",
+                            root_window.as_ref(),
+                        );
                     }
                 }
             }
@@ -690,6 +732,11 @@ impl Details {
         md_desc.add_css_class("dim-label");
         md_desc.set_halign(gtk::Align::Start);
         md_desc.set_hexpand(true);
+        md_desc.set_wrap(true);
+        md_desc.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        md_desc.set_halign(gtk::Align::Fill);
+        md_desc.set_xalign(0.);
+        md_desc.set_width_chars(1);
         md_toolbar.append(&md_desc);
 
         let md_copy_btn = gtk::Button::builder()
@@ -711,12 +758,14 @@ impl Details {
         md_outer_box.append(&md_toolbar);
 
         let md_scroll = gtk::ScrolledWindow::new();
+        md_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         md_scroll.set_vexpand(true);
         md_scroll.set_hexpand(true);
 
         let md_text_view = gtk::TextView::new();
         md_text_view.set_editable(false);
         md_text_view.set_monospace(true);
+        md_text_view.set_wrap_mode(gtk::WrapMode::WordChar);
         md_text_view.set_margin_start(10);
         md_text_view.set_margin_end(10);
         md_text_view.set_margin_top(6);
@@ -817,9 +866,14 @@ impl Details {
             val_tw_image,
             val_tw_card,
             val_social_diag,
-            inlinks_list,
-            outlinks_list,
-            images_list,
+            inlinks_table,
+            inlinks_lbl,
+            outlinks_table,
+            outlinks_lbl,
+            images_table,
+            images_lbl,
+            social_previews,
+            social_extra,
             headings_list,
             schema_all_lbl,
             schema_all_list,
@@ -871,9 +925,20 @@ impl Details {
         self.val_tw_card.set_text("");
         self.val_social_diag.set_text("");
 
-        self.clear_list_box(&self.inlinks_list);
-        self.clear_list_box(&self.outlinks_list);
-        self.clear_list_box(&self.images_list);
+        self.active_url.borrow_mut().take();
+        self.crawl_state.borrow_mut().take();
+        self.inlinks_table.store.remove_all();
+        self.outlinks_table.store.remove_all();
+        self.images_table.store.remove_all();
+        self.inlinks_lbl
+            .set_text("Inbound links pointing to this page");
+        self.outlinks_lbl
+            .set_text("Outbound links found on this page");
+        self.images_lbl.set_text("Images found on this page");
+        while let Some(child) = self.social_previews.first_child() {
+            self.social_previews.remove(&child);
+        }
+        self.clear_list_box(&self.social_extra);
         self.clear_list_box(&self.headings_list);
         self.schema_all_lbl.set_visible(false);
         self.schema_all_list.set_visible(false);
@@ -931,7 +996,11 @@ impl Details {
             let mut diags = vec![];
 
             // Check missing essential OG tags
-            if res.og_title.is_none() {
+            if res
+                .og_title
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
                 diags.push("Missing og:title tag.".to_string());
             } else if let Some(ref og_t) = res.og_title {
                 if let Some(ref t) = res.title {
@@ -941,7 +1010,11 @@ impl Details {
                 }
             }
 
-            if res.og_description.is_none() {
+            if res
+                .og_description
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
                 diags.push("Missing og:description tag.".to_string());
             } else if let Some(ref og_d) = res.og_description {
                 if let Some(ref d) = res.meta_desc {
@@ -954,17 +1027,25 @@ impl Details {
                 }
             }
 
-            if res.og_image.is_none() {
+            if res
+                .og_image
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
                 diags.push("Missing og:image tag.".to_string());
             }
 
-            if res.twitter_card.is_none() {
+            if res
+                .twitter_card
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
                 diags.push("Missing twitter:card tag.".to_string());
             }
 
             if diags.is_empty() {
                 self.val_social_diag
-                    .set_text("All Open Graph and Twitter Card tags are correctly configured.");
+                    .set_text("Essential OG tags and a Twitter card type are present. Preview and verify the remaining fields.");
                 self.val_social_diag.remove_css_class("error");
                 self.val_social_diag.add_css_class("success");
             } else {
@@ -1029,83 +1110,52 @@ impl Details {
             self.val_size
                 .set_text(&format!("{:.2} KB", res.size_bytes as f64 / 1024.0));
 
-            // Inlinks
-            for inlink in &res.inlinks {
-                let lbl = gtk::Label::new(Some(inlink));
-                lbl.set_halign(gtk::Align::Start);
-                lbl.set_margin_start(10);
-                lbl.set_margin_end(10);
-                lbl.set_margin_top(4);
-                lbl.set_margin_bottom(4);
-
-                let list_row = gtk::ListBoxRow::new();
-                list_row.set_child(Some(&lbl));
-                self.inlinks_list.append(&list_row);
+            let inbound = inspection::inlinks(&res, state);
+            let outbound = inspection::outlinks(&res);
+            self.inlinks_lbl.set_text(&format!(
+                "{} inbound link occurrences · Activate a row to select its crawled source",
+                inbound.len()
+            ));
+            self.outlinks_lbl.set_text(&format!(
+                "{} outbound link occurrences · Activate a row to select its crawled target",
+                outbound.len()
+            ));
+            self.images_lbl.set_text(&format!("{} images · {} missing alt · Previews show measured resolution; HTML size is declared", res.images.len(), res.images.iter().filter(|image| image.alt.is_none()).count()));
+            self.inlinks_table.replace(inbound);
+            self.outlinks_table.replace(outbound);
+            self.images_table.replace(
+                res.images
+                    .iter()
+                    .cloned()
+                    .map(|image| ImageRow {
+                        image,
+                        page: url.to_string(),
+                        state: state.clone(),
+                    })
+                    .collect(),
+            );
+            for twitter in [false, true] {
+                self.social_previews.append(&social_card(&res, twitter));
             }
-
-            // Outlinks
-            for outlink in &res.outlinks {
-                let lbl = gtk::Label::new(Some(outlink));
-                lbl.set_halign(gtk::Align::Start);
-                lbl.set_margin_start(10);
-                lbl.set_margin_end(10);
-                lbl.set_margin_top(4);
-                lbl.set_margin_bottom(4);
-
-                let list_row = gtk::ListBoxRow::new();
-                list_row.set_child(Some(&lbl));
-                self.outlinks_list.append(&list_row);
-            }
-
-            // Images with inline AI suggestions
-            for img in &res.images {
-                let img_box = gtk::Box::new(gtk::Orientation::Horizontal, 15);
-                img_box.set_margin_start(10);
-                img_box.set_margin_end(10);
-                img_box.set_margin_top(4);
-                img_box.set_margin_bottom(4);
-
-                let src_lbl = gtk::Label::new(Some(&img.src));
-                src_lbl.set_halign(gtk::Align::Start);
-                src_lbl.set_hexpand(true);
-                img_box.append(&src_lbl);
-
-                let alt_text = img.alt.as_deref().unwrap_or("[Missing Alt Text]");
-                let alt_lbl = gtk::Label::new(Some(alt_text));
-                alt_lbl.set_halign(gtk::Align::End);
-
-                if img.alt.is_none() {
-                    alt_lbl.add_css_class("error");
-
-                    let suggest_alt_btn = gtk::Button::builder().label("Suggest Alt").build();
-                    suggest_alt_btn.add_css_class("flat");
-
-                    let img_src = img.src.clone();
-                    let page_url = url.to_string();
-                    let state_clone = state.clone();
-                    let alt_lbl_clone = alt_lbl.clone();
-                    let suggest_alt_btn_clone = suggest_alt_btn.clone();
-
-                    suggest_alt_btn.connect_clicked(move |_| {
-                        suggest_alt_text_with_ai(
-                            &page_url,
-                            &img_src,
-                            &state_clone,
-                            alt_lbl_clone.clone(),
-                            suggest_alt_btn_clone.clone(),
-                        );
-                    });
-
-                    img_box.append(&ai_action_group(&suggest_alt_btn));
-                } else {
-                    alt_lbl.add_css_class("dim-label");
+            for (key, value) in &res.social_metadata {
+                if ![
+                    "og:title",
+                    "og:description",
+                    "og:image",
+                    "og:url",
+                    "og:type",
+                    "twitter:title",
+                    "twitter:description",
+                    "twitter:image",
+                    "twitter:card",
+                ]
+                .contains(&key.as_str())
+                {
+                    Self::add_info_row(&self.social_extra, key).set_text(value);
                 }
-                img_box.append(&alt_lbl);
-
-                let list_row = gtk::ListBoxRow::new();
-                list_row.set_child(Some(&img_box));
-                self.images_list.append(&list_row);
             }
+            self.social_extra
+                .set_visible(self.social_extra.first_child().is_some());
 
             // Headings (H1–H6)
             if res.headings.is_empty() {
@@ -1155,7 +1205,13 @@ impl Details {
                     let text_lbl = gtk::Label::new(Some(&heading.text));
                     text_lbl.set_halign(gtk::Align::Start);
                     text_lbl.set_hexpand(true);
-                    text_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    text_lbl.set_wrap(true);
+                    text_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    text_lbl.set_width_chars(1);
+                    text_lbl.set_max_width_chars(1);
+                    text_lbl.set_halign(gtk::Align::Fill);
+                    text_lbl.set_xalign(0.);
+                    text_lbl.set_selectable(true);
                     // Highlight duplicate H1s
                     if heading.level == 1 && h1_count > 1 {
                         text_lbl.add_css_class("warning");
@@ -1197,11 +1253,23 @@ impl Details {
                         res.schema_json_ld.len()
                     )));
                     title_lbl.set_halign(gtk::Align::Start);
+                    title_lbl.set_wrap(true);
+                    title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    title_lbl.set_width_chars(1);
+                    title_lbl.set_hexpand(true);
+                    title_lbl.set_halign(gtk::Align::Fill);
+                    title_lbl.set_xalign(0.);
                     title_lbl.add_css_class("bold");
                     row_box.append(&title_lbl);
 
                     let sub_lbl = gtk::Label::new(Some("Combined view of every schema block"));
                     sub_lbl.set_halign(gtk::Align::Start);
+                    sub_lbl.set_wrap(true);
+                    sub_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    sub_lbl.set_width_chars(1);
+                    sub_lbl.set_hexpand(true);
+                    sub_lbl.set_halign(gtk::Align::Fill);
+                    sub_lbl.set_xalign(0.);
                     sub_lbl.add_css_class("dim-label");
                     row_box.append(&sub_lbl);
 
@@ -1222,11 +1290,23 @@ impl Details {
                     let title_lbl =
                         gtk::Label::new(Some(&format!("Schema Block #{} ({})", idx + 1, types)));
                     title_lbl.set_halign(gtk::Align::Start);
+                    title_lbl.set_wrap(true);
+                    title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    title_lbl.set_width_chars(1);
+                    title_lbl.set_hexpand(true);
+                    title_lbl.set_halign(gtk::Align::Fill);
+                    title_lbl.set_xalign(0.);
                     title_lbl.add_css_class("bold");
                     row_box.append(&title_lbl);
 
                     let ctx_lbl = gtk::Label::new(Some(&format!("Context: {}", contexts)));
                     ctx_lbl.set_halign(gtk::Align::Start);
+                    ctx_lbl.set_wrap(true);
+                    ctx_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    ctx_lbl.set_width_chars(1);
+                    ctx_lbl.set_hexpand(true);
+                    ctx_lbl.set_halign(gtk::Align::Fill);
+                    ctx_lbl.set_xalign(0.);
                     ctx_lbl.add_css_class("dim-label");
                     row_box.append(&ctx_lbl);
 
@@ -1247,6 +1327,12 @@ impl Details {
                     gtk::Label::new(Some("✓ No validation errors or warnings found."));
                 success_lbl.add_css_class("success");
                 success_lbl.set_halign(gtk::Align::Start);
+                success_lbl.set_wrap(true);
+                success_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                success_lbl.set_width_chars(1);
+                success_lbl.set_hexpand(true);
+                success_lbl.set_halign(gtk::Align::Fill);
+                success_lbl.set_xalign(0.);
                 success_lbl.set_margin_start(10);
                 success_lbl.set_margin_top(6);
                 success_lbl.set_margin_bottom(6);
@@ -1259,6 +1345,12 @@ impl Details {
                     let err_lbl = gtk::Label::new(Some(&format!("✗ {}", err)));
                     err_lbl.add_css_class("error");
                     err_lbl.set_halign(gtk::Align::Start);
+                    err_lbl.set_wrap(true);
+                    err_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                    err_lbl.set_width_chars(1);
+                    err_lbl.set_hexpand(true);
+                    err_lbl.set_halign(gtk::Align::Fill);
+                    err_lbl.set_xalign(0.);
                     err_lbl.set_wrap(true);
                     err_lbl.set_margin_start(10);
                     err_lbl.set_margin_top(6);
@@ -1299,6 +1391,10 @@ impl Details {
         title_lbl.set_halign(gtk::Align::Start);
         title_lbl.add_css_class("bold");
         title_lbl.set_width_request(140);
+        title_lbl.set_max_width_chars(20);
+        title_lbl.set_wrap(true);
+        title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        title_lbl.set_valign(gtk::Align::Start);
         row_box.append(&title_lbl);
 
         let val_lbl = gtk::Label::new(None);
@@ -1306,6 +1402,11 @@ impl Details {
         val_lbl.set_hexpand(true);
         val_lbl.set_selectable(true);
         val_lbl.set_wrap(true);
+        val_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        val_lbl.set_halign(gtk::Align::Fill);
+        val_lbl.set_xalign(0.);
+        val_lbl.set_width_chars(1);
+        val_lbl.set_max_width_chars(1);
         val_lbl.add_css_class("selectable");
         row_box.append(&val_lbl);
 
@@ -1328,6 +1429,10 @@ impl Details {
         title_lbl.set_halign(gtk::Align::Start);
         title_lbl.add_css_class("bold");
         title_lbl.set_width_request(140);
+        title_lbl.set_max_width_chars(20);
+        title_lbl.set_wrap(true);
+        title_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        title_lbl.set_valign(gtk::Align::Start);
         row_box.append(&title_lbl);
 
         let val_lbl = gtk::Label::new(None);
@@ -1335,6 +1440,11 @@ impl Details {
         val_lbl.set_hexpand(true);
         val_lbl.set_selectable(true);
         val_lbl.set_wrap(true);
+        val_lbl.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        val_lbl.set_halign(gtk::Align::Fill);
+        val_lbl.set_xalign(0.);
+        val_lbl.set_width_chars(1);
+        val_lbl.set_max_width_chars(1);
         val_lbl.add_css_class("selectable");
         row_box.append(&val_lbl);
 
@@ -1358,6 +1468,214 @@ impl Details {
             list_box.remove(&row);
         }
     }
+}
+
+fn link_table() -> DetailTable {
+    let columns = [
+        ("Source URL", 0),
+        ("Target URL", 1),
+        ("Anchor text", 2),
+        ("Rel", 3),
+    ]
+    .into_iter()
+    .map(|(title, index)| {
+        let render: super::detail_table::CellRenderer = Rc::new(move |item| {
+            let row = item.borrow::<LinkRow>();
+            let text = match index {
+                0 => row.source.as_str(),
+                1 => row.target.as_str(),
+                2 => row
+                    .anchor
+                    .as_deref()
+                    .map(|s| if s.is_empty() { "[Empty anchor]" } else { s })
+                    .unwrap_or("Not recorded — recrawl page"),
+                _ => row
+                    .rel
+                    .as_deref()
+                    .map(|s| if s.is_empty() { "—" } else { s })
+                    .unwrap_or("Not recorded"),
+            };
+            wrapped_label(text).upcast()
+        });
+        (title, if index == 3 { Some(105) } else { None }, render)
+    })
+    .collect();
+    let table = DetailTable::new(columns);
+    let empty = wrapped_label("No links recorded for this page.");
+    empty.add_css_class("dim-label");
+    table.set_empty_message(&empty.text());
+    table
+}
+
+#[derive(Clone)]
+struct ImageRow {
+    image: ImageInfo,
+    page: String,
+    state: CrawlState,
+}
+
+fn image_table() -> DetailTable {
+    let preview: super::detail_table::CellRenderer = Rc::new(|item| {
+        let row = item.borrow::<ImageRow>();
+        super::image_preview::widget(
+            Some(row.image.src.clone()),
+            row.image.local_path.clone(),
+            72,
+        )
+        .upcast()
+    });
+    let source: super::detail_table::CellRenderer = Rc::new(|item| {
+        let row = item.borrow::<ImageRow>();
+        wrapped_label(&row.image.src).upcast()
+    });
+    let alt: super::detail_table::CellRenderer = Rc::new(|item| {
+        let row = item.borrow::<ImageRow>();
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let label = wrapped_label(
+            row.image
+                .alt
+                .as_deref()
+                .unwrap_or("[Missing alt attribute]"),
+        );
+        if row.image.alt.is_none() {
+            label.add_css_class("error");
+        }
+        cell.append(&label);
+        let status = wrapped_label(inspection::alt_status(row.image.alt.as_deref()));
+        status.add_css_class("dim-label");
+        cell.append(&status);
+        if row.image.alt.is_none() {
+            let button = gtk::Button::with_label("Suggest Alt");
+            button.add_css_class("flat");
+            let row = row.clone();
+            let label = label.clone();
+            button.connect_clicked(move |button| {
+                suggest_alt_text_with_ai(
+                    &row.page,
+                    &row.image.src,
+                    &row.state,
+                    label.clone(),
+                    button.clone(),
+                );
+            });
+            cell.append(&ai_action_group(&button));
+        }
+        cell.upcast()
+    });
+    let details: super::detail_table::CellRenderer = Rc::new(|item| {
+        let row = item.borrow::<ImageRow>();
+        let image = &row.image;
+        let size = format!(
+            "HTML size: {} × {}",
+            image.width.map_or("?".into(), |v| v.to_string()),
+            image.height.map_or("?".into(), |v| v.to_string())
+        );
+        let mut fields = vec![size];
+        if image.width.is_none() && image.height.is_none() {
+            fields[0] = "HTML size: not declared".into();
+        }
+        if let Some(title) = &image.title {
+            fields.push(format!("Title: {title}"));
+        }
+        if let Some(loading) = &image.loading {
+            fields.push(format!("Loading: {loading}"));
+        }
+        if let Some(path) = &image.local_path {
+            fields.push(format!("Local file: {path}"));
+        }
+        wrapped_label(&fields.join("\n")).upcast()
+    });
+    let table = DetailTable::new(vec![
+        ("Preview / resolution", Some(150), preview),
+        ("Image URL", None, source),
+        ("Alt text", None, alt),
+        ("HTML details", None, details),
+    ]);
+    let empty = wrapped_label("No images recorded for this page.");
+    empty.add_css_class("dim-label");
+    table.set_empty_message(&empty.text());
+    table
+}
+
+fn social_value(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|value| !value.trim().is_empty())
+}
+
+fn social_card(page: &crate::state::CrawlResult, twitter: bool) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    card.set_hexpand(true);
+    card.set_valign(gtk::Align::Start);
+    card.set_homogeneous(false);
+    let heading = wrapped_label(if twitter {
+        "Twitter / X Card"
+    } else {
+        "Open Graph"
+    });
+    heading.add_css_class("heading");
+    card.append(&heading);
+    let title = if twitter {
+        social_value(&page.twitter_title).or(social_value(&page.og_title))
+    } else {
+        social_value(&page.og_title)
+    };
+    let description = if twitter {
+        social_value(&page.twitter_description).or(social_value(&page.og_description))
+    } else {
+        social_value(&page.og_description)
+    };
+    let image = if twitter {
+        social_value(&page.twitter_image).or(social_value(&page.og_image))
+    } else {
+        social_value(&page.og_image)
+    };
+    let image_url = image.and_then(|value| inspection::preview_url(&page.url, value));
+    let local = image_url
+        .as_ref()
+        .and_then(|url| page.images.iter().find(|image| &image.src == url))
+        .and_then(|image| image.local_path.clone());
+    card.append(&super::image_preview::widget(image_url, local, 144));
+    let title = wrapped_label(
+        title
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("[Missing social title]"),
+    );
+    title.add_css_class("title-4");
+    card.append(&title);
+    card.append(&wrapped_label(
+        description
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("[Missing social description]"),
+    ));
+    let address = wrapped_label(social_value(&page.og_url).unwrap_or(&page.url));
+    address.add_css_class("dim-label");
+    card.append(&address);
+    let image_alt = if twitter {
+        page.social_metadata
+            .get("twitter:image:alt")
+            .or_else(|| page.social_metadata.get("og:image:alt"))
+    } else {
+        page.social_metadata.get("og:image:alt")
+    };
+    if let Some(alt) = image_alt {
+        card.append(&wrapped_label(&format!("Image alt: {alt}")));
+    }
+    if twitter {
+        card.append(&wrapped_label(&format!(
+            "Card type: {}",
+            social_value(&page.twitter_card).unwrap_or("Not declared")
+        )));
+        if social_value(&page.twitter_title).is_none()
+            || social_value(&page.twitter_description).is_none()
+            || social_value(&page.twitter_image).is_none()
+        {
+            let fallback = wrapped_label(
+                "Missing Twitter fields use available Open Graph values in this preview.",
+            );
+            fallback.add_css_class("dim-label");
+            card.append(&fallback);
+        }
+    }
+    card
 }
 
 fn ai_action_group(button: &gtk::Button) -> gtk::Box {
@@ -1537,98 +1855,102 @@ async fn call_ai_api(
     crate::ai::AiClient::new()?.complete(&config, prompt).await
 }
 
-// Export helpers
-fn export_inlinks_to_csv(inlinks: &[String], parent_window: Option<&gtk::Window>) {
-    let dialog = gtk::FileDialog::new();
-    dialog.set_title("Export Inlinks to CSV");
-    dialog.set_initial_name(Some("inlinks.csv"));
-
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some("CSV Files"));
-    filter.add_pattern("*.csv");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    dialog.set_filters(Some(&filters));
-
-    let inlinks = inlinks.to_vec();
-    dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
-        if let Ok(file) = result {
-            if let Some(path) = file.path() {
-                if let Ok(mut f) = std::fs::File::create(&path) {
-                    use std::io::Write;
-                    let _ = f.write_all(b"\xEF\xBB\xBF");
-                    let mut wtr = csv::Writer::from_writer(f);
-                    let _ = wtr.write_record(&["Source Inlink URL"]);
-                    for link in inlinks {
-                        let _ = wtr.write_record(&[link]);
-                    }
-                    let _ = wtr.flush();
-                }
-            }
-        }
-    });
+// Exports contain the same recorded values as the detail tables.
+fn export_links_to_csv(rows: Vec<LinkRow>, filename: &str, parent: Option<&gtk::Window>) {
+    let records = rows
+        .into_iter()
+        .map(|row| {
+            vec![
+                row.source,
+                row.target,
+                row.anchor.unwrap_or_default(),
+                row.rel.unwrap_or_default(),
+            ]
+        })
+        .collect();
+    export_detail_csv(
+        filename,
+        &["Source URL", "Target URL", "Anchor Text", "Rel"],
+        records,
+        parent,
+    );
 }
 
-fn export_outlinks_to_csv(outlinks: &[String], parent_window: Option<&gtk::Window>) {
-    let dialog = gtk::FileDialog::new();
-    dialog.set_title("Export Outlinks to CSV");
-    dialog.set_initial_name(Some("outlinks.csv"));
-
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some("CSV Files"));
-    filter.add_pattern("*.csv");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    dialog.set_filters(Some(&filters));
-
-    let outlinks = outlinks.to_vec();
-    dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
-        if let Ok(file) = result {
-            if let Some(path) = file.path() {
-                if let Ok(mut f) = std::fs::File::create(&path) {
-                    use std::io::Write;
-                    let _ = f.write_all(b"\xEF\xBB\xBF");
-                    let mut wtr = csv::Writer::from_writer(f);
-                    let _ = wtr.write_record(&["Destination Outlink URL"]);
-                    for link in outlinks {
-                        let _ = wtr.write_record(&[link]);
-                    }
-                    let _ = wtr.flush();
-                }
-            }
-        }
-    });
+fn export_images_to_csv(images: &[ImageInfo], parent: Option<&gtk::Window>) {
+    let records = images
+        .iter()
+        .map(|image| {
+            vec![
+                image.src.clone(),
+                image.alt.clone().unwrap_or_default(),
+                inspection::alt_status(image.alt.as_deref()).into(),
+                image.width.map(|v| v.to_string()).unwrap_or_default(),
+                image.height.map(|v| v.to_string()).unwrap_or_default(),
+                image.title.clone().unwrap_or_default(),
+                image.loading.clone().unwrap_or_default(),
+                image.local_path.clone().unwrap_or_default(),
+            ]
+        })
+        .collect();
+    export_detail_csv(
+        "images.csv",
+        &[
+            "Image Source",
+            "Alt Text",
+            "Alt Status",
+            "HTML Width",
+            "HTML Height",
+            "Title",
+            "Loading",
+            "Local Path",
+        ],
+        records,
+        parent,
+    );
 }
 
-fn export_images_to_csv(images: &[ImageInfo], parent_window: Option<&gtk::Window>) {
+fn export_detail_csv(
+    filename: &str,
+    headers: &[&str],
+    records: Vec<Vec<String>>,
+    parent: Option<&gtk::Window>,
+) {
     let dialog = gtk::FileDialog::new();
-    dialog.set_title("Export Images to CSV");
-    dialog.set_initial_name(Some("images.csv"));
-
+    dialog.set_title("Export details to CSV");
+    dialog.set_initial_name(Some(filename));
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("CSV Files"));
     filter.add_pattern("*.csv");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    dialog.set_filters(Some(&filters));
-
-    let images = images.to_vec();
-    dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
-        if let Ok(file) = result {
-            if let Some(path) = file.path() {
-                if let Ok(mut f) = std::fs::File::create(&path) {
+    dialog.set_default_filter(Some(&filter));
+    let headers: Vec<String> = headers.iter().map(|s| s.to_string()).collect();
+    let parent = parent.cloned();
+    dialog.save(parent.as_ref(), None::<&gio::Cancellable>, {
+        let parent = parent.clone();
+        move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                let write = || -> Result<(), Box<dyn std::error::Error>> {
                     use std::io::Write;
-                    let _ = f.write_all(b"\xEF\xBB\xBF");
-                    let mut wtr = csv::Writer::from_writer(f);
-                    let _ = wtr.write_record(&["Image Source", "Alt Text", "Local Path"]);
-                    for img in images {
-                        let _ = wtr.write_record(&[
-                            img.src,
-                            img.alt.unwrap_or_default(),
-                            img.local_path.unwrap_or_default(),
-                        ]);
+                    let mut file = std::fs::File::create(path)?;
+                    file.write_all(b"\xEF\xBB\xBF")?;
+                    let mut writer = csv::Writer::from_writer(file);
+                    writer.write_record(headers)?;
+                    for record in records {
+                        writer.write_record(record)?;
                     }
-                    let _ = wtr.flush();
+                    writer.flush()?;
+                    Ok(())
+                };
+                if let Err(error) = write() {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading("Could not export details")
+                        .body(format!(
+                            "{error}. Choose a writable location and try again."
+                        ))
+                        .build();
+                    dialog.add_response("ok", "OK");
+                    dialog.present(parent.as_ref());
                 }
             }
         }

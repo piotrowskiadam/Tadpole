@@ -1,4 +1,6 @@
-use crate::state::{CrawlConfig, CrawlMode, CrawlResult, CrawlState, HeadingEntry, ImageInfo};
+use crate::state::{
+    CrawlConfig, CrawlMode, CrawlResult, CrawlState, HeadingEntry, ImageInfo, LinkInfo,
+};
 use scraper::{Html, Selector};
 use std::sync::Arc;
 use std::time::Duration;
@@ -422,6 +424,8 @@ impl Crawler {
         let mut word_count = 0;
         let mut canonical = None;
         let mut outlinks = vec![];
+        let mut link_details = vec![];
+        let mut social_metadata = Default::default();
         let mut images = vec![];
         let mut body_bytes = vec![];
 
@@ -515,6 +519,8 @@ impl Crawler {
                 word_count = parsed.word_count;
                 images = parsed.images;
                 outlinks = parsed.outlinks;
+                link_details = parsed.link_details;
+                social_metadata = parsed.social_metadata;
 
                 og_title = parsed.og_title;
                 og_description = parsed.og_description;
@@ -617,6 +623,8 @@ impl Crawler {
             canonical,
             inlinks: vec![], // populated dynamically via state.add_inlink
             outlinks,
+            link_details,
+            social_metadata,
             images,
             depth,
             response_time_ms: start_time.elapsed().as_millis() as u32,
@@ -724,6 +732,8 @@ pub struct ParsedData {
     pub canonical: Option<String>,
     pub noindex: bool,
     pub outlinks: Vec<String>,
+    pub link_details: Vec<LinkInfo>,
+    pub social_metadata: std::collections::BTreeMap<String, String>,
     pub images: Vec<ImageInfo>,
     pub local_queue: Vec<String>,
 
@@ -865,12 +875,23 @@ pub fn parse_html(
                 src: resolved_src,
                 alt: img_el.attr("alt").map(|s| s.to_string()),
                 local_path: None,
+                width: img_el
+                    .attr("width")
+                    .and_then(|v| v.trim().parse().ok())
+                    .filter(|v| *v > 0),
+                height: img_el
+                    .attr("height")
+                    .and_then(|v| v.trim().parse().ok())
+                    .filter(|v| *v > 0),
+                title: img_el.attr("title").map(str::to_string),
+                loading: img_el.attr("loading").map(str::to_string),
             });
         }
     }
 
     // Links
     let mut outlinks = vec![];
+    let mut link_details = vec![];
     let mut local_queue = vec![];
     let link_sel = Selector::parse("a[href]").unwrap();
     for link_el in document.select(&link_sel) {
@@ -882,6 +903,30 @@ pub fn parse_html(
             clean_url.set_fragment(None);
             let clean_str = clean_url.to_string();
 
+            // Image links use their alt text when no visible text is available.
+            let mut anchor = link_el
+                .text()
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            if anchor.is_empty() {
+                anchor = link_el
+                    .select(&img_sel)
+                    .filter_map(|img| img.attr("alt"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+            link_details.push(LinkInfo {
+                target: resolved_url.to_string(),
+                anchor,
+                rel: link_el
+                    .attr("rel")
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            });
             outlinks.push(clean_str.clone());
 
             // Check if internal domain
@@ -893,6 +938,22 @@ pub fn parse_html(
             {
                 local_queue.push(clean_str);
             }
+        }
+    }
+
+    let mut social_metadata = std::collections::BTreeMap::new();
+    for meta in document.select(&Selector::parse("meta[property], meta[name]").unwrap()) {
+        let key = meta
+            .attr("property")
+            .or_else(|| meta.attr("name"))
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if (key.starts_with("og:") || key.starts_with("twitter:"))
+            && let Some(value) = meta.attr("content")
+        {
+            social_metadata
+                .entry(key)
+                .or_insert_with(|| value.trim().to_string());
         }
     }
 
@@ -1041,6 +1102,8 @@ pub fn parse_html(
         canonical,
         noindex,
         outlinks,
+        link_details,
+        social_metadata,
         images,
         local_queue,
         og_title,

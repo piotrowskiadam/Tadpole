@@ -43,7 +43,7 @@ Move from the site overview to the page that needs attention: filter the crawl, 
 | Pages that need attention | HTTP status, indexability, titles, descriptions, canonical URLs, headings and image checks. |
 | Patterns across a site | Searchable results, duplicate and missing-metadata filters, and a summary of recurring issues. |
 | How pages connect | Inlinks, outlinks, internal-link opportunities and six views of site structure. |
-| More than a page title | Open Graph/Twitter metadata, JSON-LD diagnostics and extracted Markdown. |
+| More than a page title | Wrapping link tables with anchors and targets, image previews with resolution and alt text, social preview cards, JSON-LD diagnostics and extracted Markdown. |
 | Evidence you can use elsewhere | Filtered CSV export, spreadsheet-friendly copying, Markdown files and saved `.seocrawl` projects. |
 
 ## Explore the structure behind the URLs

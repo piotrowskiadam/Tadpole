@@ -30,6 +30,17 @@ GDK_BACKEND=broadway BROADWAY_DISPLAY=:8 GSK_RENDERER=broadway target/debug/exam
 
 The crawl window has an 800px minimum to keep native header controls reachable. Set `TADPOLE_PREVIEW_WIDTH=1024` for a compact crawl window and `TADPOLE_PREVIEW_LIGHT=1` to force the light appearance in the preview process. The backend needs its browser client connected before rendering. Alternatively run the example in a graphical test session. Inspect/capture the actual rendered browser client: attempting to export Broadway-specific GSK nodes through a Cairo renderer produced invalid colors in this environment, so that PNG helper was removed. These previews are a visual smoke check; they do not replace keyboard/screen-reader or Windows checks.
 
+The detail-tab fixture exercises wrapping with long URLs, repeated anchors, missing/empty alt attributes, local image previews, social fallback values, JSON-LD and Markdown. It uses fictional data and bundled images, with no external requests or AI calls:
+
+```sh
+cargo run --locked --example details_preview
+TADPOLE_PREVIEW_WIDTH=800 TADPOLE_PREVIEW_LIGHT=1 cargo run --locked --example details_preview
+```
+
+For Broadway, use the same connected-client setup above and run `target/debug/examples/details_preview` instead. Inspect the browser client directly; Broadway render trees cannot reliably be exported using the native PNG helper.
+
+Detail tables preserve each link occurrence, including anchor text, `rel` and fragment targets. Older projects still show their URL lists; recrawl source pages to collect missing anchor/HTML image details. Image previews fetch HTTP(S) images on demand (or use downloaded local files), with four concurrent requests, a 12-second timeout, an 8 MiB body limit and a 64-thumbnail memory cache. Preview resolution/size is measured from the image file; exported image width/height are explicitly the declared HTML attributes. Social previews are illustrative, show Twitter-to-OG fallbacks and retain additional OG/Twitter metadata such as image alt, dimensions and site name.
+
 Manual release checklist:
 
 - Start, pause, resume and stop a crawl; start another crawl and verify that old results do not arrive.
