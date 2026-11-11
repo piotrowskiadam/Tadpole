@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/snapcraft-featured-banner.png" alt="Tadpole — Explore your site. Find what matters. Desktop SEO crawler." width="1080">
+  <img src="docs/media/snapcraft-app-banner.png" alt="Tadpole — Explore your site. Find what matters. Desktop SEO crawler with an app-window preview." width="1080">
 </p>
 
 <h1 align="center">Tadpole</h1>
