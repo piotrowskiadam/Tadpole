@@ -28,6 +28,11 @@ fn main() {
     // 2. Enter Tokio runtime context so any tokio::spawn calls from GTK run inside this runtime
     let _guard = rt.enter();
 
+    if std::env::var("TADPOLE_MEDIA_MODE").as_deref() == Ok("1") {
+        ui::media::run();
+        return;
+    }
+
     // 4. Initialize Libadwaita application
     let flatpak_id = if std::path::Path::new("/.flatpak-info").exists() {
         std::env::var("FLATPAK_ID").ok()

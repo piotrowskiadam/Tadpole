@@ -467,6 +467,35 @@ impl MainWindow {
         self.window.present();
     }
 
+    /// Populate a fresh media-mode window with fictional, offline crawl data.
+    pub(crate) fn load_media_demo(&self) {
+        let results = crate::ui::media::demo_results();
+        for result in &results {
+            self.state.add_discovered(&result.url);
+            self.state.insert_result(result.clone());
+        }
+        for result in &results {
+            for target in &result.outlinks {
+                self.state.add_inlink(target, &result.url);
+            }
+        }
+        for result in &results {
+            if let Some(result) = self.state.get_result(&result.url) {
+                self.table.add_or_update(result);
+            }
+        }
+        self.table.select_url("https://demo.example/");
+        self.sidebar.update_counts(&self.state);
+        self.summary_panel.update(&self.state);
+        self.address_entry.set_text("https://demo.example/");
+        self.address_entry.set_sensitive(false);
+        self.start_button.set_sensitive(false);
+        self.pause_button.set_sensitive(false);
+        self.status_label
+            .set_text("Demo data · 48 fictional pages · Offline media session");
+        self.window.set_title(Some("Tadpole — Demo data"));
+    }
+
     fn setup_events(
         &self,
         open_button: gtk::Button,

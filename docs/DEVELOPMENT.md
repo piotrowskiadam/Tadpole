@@ -38,6 +38,10 @@ Manual release checklist:
 - At 1024px and 1200px widths, inspect toolbar, filter panel, dashboard, details tabs; check system light/dark themes and larger text.
 - Check keyboard focus, field names and icon descriptions with the platform accessibility inspector/screen reader.
 
+## Media capture
+
+Use the opt-in offline media mode for store screenshots and short frame recordings. See [Media assets and recording](MEDIA.md) for launch commands, limitations, and GIF/MP4 export. Normal application startup is unchanged.
+
 ## Packaging
 
 - `build_appimage.sh` stages the binary/desktop file/icon. It currently requires host GTK/Libadwaita; it is not a fully self-contained runtime bundle.

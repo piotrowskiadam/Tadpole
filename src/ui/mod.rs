@@ -1,5 +1,6 @@
 pub mod details;
 pub mod link_opportunities;
+pub mod media;
 pub mod row_data;
 pub mod sidebar;
 pub mod site_visualizer;

@@ -7,3 +7,6 @@
 .env
 .env.*
 *.seocrawl
+
+# Local developer media output
+/tadpole-media/
