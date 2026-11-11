@@ -40,3 +40,9 @@ TADPOLE_MEDIA_MODE=1 TADPOLE_MEDIA_AUTOSHOT=1 \
 ```
 
 This saves `demo-crawl.png` and `media-tools.png` after three seconds and exits. Add `TADPOLE_MEDIA_AUTORECORD=1` to also run a three-second recording smoke test before exit. Run it in a graphical test session. GTK Broadway's renderer may not support render-to-texture correctly; use a native Wayland/X11 renderer for exported PNGs. Review captures for correct colors and complete content before publishing. Demo data is illustrative, not measured results from a real website.
+
+## Snap Store listing kit
+
+[The field-by-field listing kit](snap-store/LISTING.md) includes prepared copy, the app-view banner and gallery assets. The Store stable Snap must match advertised features before public save.
+
+For a reproducible visualization capture, add `TADPOLE_MEDIA_SCENE=visualizer` to the media-mode autoscreenshot command. It opens the real visualizer and selects its directory icicle view, saving `demo-visualizer.png`.

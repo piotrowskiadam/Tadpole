@@ -21,7 +21,7 @@ Tadpole is an SEO crawler and site-auditing tool. Its owner is an experienced SE
 
 ## Brand commitments
 
-Preserve the Tadpole name, established green mascot and GTK/Libadwaita interface. The owner chose a logo-led store banner with “Explore your site. Find what matters.” Native tool copy remains English.
+Preserve the Tadpole name, established green mascot and GTK/Libadwaita interface. The owner chose logo-led and app-view store banners with “Explore your site. Find what matters.” Native tool copy remains English.
 
 ## Evidence and open decisions
 

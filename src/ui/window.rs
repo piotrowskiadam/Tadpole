@@ -496,6 +496,10 @@ impl MainWindow {
         self.window.set_title(Some("Tadpole — Demo data"));
     }
 
+    pub(crate) fn open_media_visualizer(&self) {
+        self.visualizer_button.emit_clicked();
+    }
+
     fn setup_events(
         &self,
         open_button: gtk::Button,

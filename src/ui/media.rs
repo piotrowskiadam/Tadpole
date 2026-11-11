@@ -64,6 +64,24 @@ fn capture(window: &gtk::Window, path: &Path) -> Result<(), String> {
     texture.save_to_png(path).map_err(|e| e.to_string())
 }
 
+// Exercise the real view selector for the visualization gallery preset.
+fn select_icicle(widget: &gtk::Widget) {
+    if let Some(dropdown) = widget.downcast_ref::<gtk::DropDown>()
+        && let Some(model) = dropdown
+            .model()
+            .and_then(|m| m.downcast::<gtk::StringList>().ok())
+        && model.string(0).as_deref() == Some("Directory area")
+    {
+        dropdown.set_selected(1);
+        return;
+    }
+    let mut child = widget.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        select_icicle(&widget);
+    }
+}
+
 pub fn run() {
     let app = adw::Application::builder()
         .application_id("com.tadpole.media")
@@ -75,6 +93,8 @@ pub fn run() {
         main.load_media_demo();
         main.window().set_default_size(1440, 900);
         main.present();
+        let visualizer_scene = std::env::var("TADPOLE_MEDIA_SCENE").as_deref() == Ok("visualizer");
+        if visualizer_scene { main.open_media_visualizer(); }
         let target: gtk::Window = main.window().clone().upcast();
         let folder = std::env::var_os("TADPOLE_MEDIA_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("tadpole-media"));
         let folder = if folder.is_absolute() { folder } else { std::env::current_dir().unwrap_or_default().join(folder) };
@@ -86,6 +106,7 @@ pub fn run() {
         intro.set_xalign(0.);
         body.append(&intro);
         let targets = gtk::DropDown::from_strings(&["Crawl window", "Site visualizer"]);
+        if visualizer_scene { targets.set_selected(1); }
         targets.update_property(&[gtk::accessible::Property::Label("Window to capture")]);
         body.append(&targets);
         let screenshot = gtk::Button::with_label("Save screenshot");
@@ -108,6 +129,8 @@ pub fn run() {
             let result = std::fs::create_dir_all(&folder).map_err(|e| e.to_string()).and_then(|_| choose().ok_or("Open the site visualizer first.".into())).and_then(|window| capture(&window, &path));
             status.set_text(&match result { Ok(()) => format!("Saved {}", path.display()), Err(e) => format!("Capture failed: {e}") });
         }});
+        if visualizer_scene && let Some(window) = choose() { select_icicle(window.upcast_ref()); }
+        let auto_choose = choose.clone();
         let recording = Rc::new(Cell::new(false));
         record.connect_clicked({ let recording = recording.clone(); let folder = folder.clone(); let status = status.clone(); let controls = controls.downgrade(); move |button| {
             if recording.replace(!recording.get()) { button.set_sensitive(false); button.set_label("Stopping…"); return; }
@@ -131,8 +154,8 @@ pub fn run() {
             let app = app.clone();
             let tools_window: gtk::Window = controls.clone().upcast();
             glib::timeout_add_local_once(Duration::from_secs(3), move || {
-                let result = std::fs::create_dir_all(&folder).map_err(|e| e.to_string()).and_then(|_| capture(&target, &folder.join("demo-crawl.png")));
-                match result { Ok(()) => eprintln!("Saved demo-crawl.png"), Err(e) => eprintln!("Capture failed: {e}") }
+                let result = std::fs::create_dir_all(&folder).map_err(|e| e.to_string()).and_then(|_| auto_choose().ok_or("Selected demo window is not open.".into()).and_then(|window| capture(&window, &folder.join(if visualizer_scene { "demo-visualizer.png" } else { "demo-crawl.png" }))));
+                match result { Ok(()) => eprintln!("Saved demo screenshot"), Err(e) => eprintln!("Capture failed: {e}") }
                 if let Err(e) = capture(&tools_window, &folder.join("media-tools.png")) { eprintln!("Tools capture failed: {e}"); }
                 if std::env::var("TADPOLE_MEDIA_AUTORECORD").as_deref() == Ok("1") {
                     record.emit_clicked();
