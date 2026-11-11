@@ -1,14 +1,16 @@
 # Tadpole releases
 
-Tadpole provides an upstream Flatpak bundle alongside the other Linux and Windows packages. The bundle is distributed through GitHub and is not a Flathub submission. Version-specific changes are listed in the automatically generated notes below.
+## 0.4.2 — Richer page inspection
 
-Tadpole includes a native site-visualization workspace and local SEO audit tools:
+- **Inlinks and Outlinks:** inspect each link occurrence in wrapping tables with source URL, target URL, anchor text and `rel`. Fragment targets and repeated links are retained. Activate a row to select the related crawled page, or export the richer data to CSV.
+- **Images:** see thumbnails, measured image resolution and file size, alt text and missing/empty-alt status, declared HTML dimensions, image title, loading mode and local file details. Previews load on demand with bounded downloads and a thumbnail cache.
+- **Social / OG:** inspect illustrative Open Graph and Twitter/X preview cards alongside the original metadata, including image dimensions, alt text and site information. Twitter previews identify fallback to available Open Graph values.
+- **Word wrapping:** read long URLs and text throughout the bottom detail panels, including headings, JSON-LD and Markdown, without extensive horizontal scrolling.
+- **Documentation:** refreshed README, app-view banners, support links and an offline detail-tab preview for development.
 
-- Explore directory treemaps and icicles, shortest-path trees, URL link neighborhoods, section-link matrices, and depth versus internal rank.
-- Prepare visualizations in the background, cache drawing geometry, and inspect results in a searchable, paginated evidence list.
-- Audit crawl status, indexability, metadata, structured data, images, and internal links; export filtered results and Markdown.
-- Use optional page-level OpenRouter or OpenAI metadata suggestions. Paid AI requests are initiated explicitly.
-- Benefit from crawler lifecycle, persistence, accessibility, documentation, and validation improvements.
+Existing `.seocrawl` projects remain compatible. Recrawl source pages to collect anchor text, HTML image attributes and additional social metadata that older versions did not save. Image CSV dimensions are the declared HTML attributes; measured resolution and file size are shown in the on-demand preview. Social previews are illustrative and may differ from the platforms' rendering.
+
+The upstream Flatpak bundle is distributed through GitHub and is not a Flathub submission. This release also retains the native site visualizer, local SEO audit tools and explicitly initiated page-level AI suggestions.
 
 ## AI development disclosure
 

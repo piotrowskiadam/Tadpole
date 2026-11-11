@@ -13,5 +13,12 @@
   <url type="homepage">https://github.com/piotrowskiadam/Tadpole</url>
   <url type="bugtracker">https://github.com/piotrowskiadam/Tadpole/issues</url>
   <launchable type="desktop-id">com.tadpole.seo.desktop</launchable>
+  <releases>
+    <release version="0.4.2" date="2026-11-12">
+      <description>
+        <p>Inspect links in wrapping tables with anchors and targets, preview images with resolution and alt text, and review richer Open Graph and Twitter cards.</p>
+      </description>
+    </release>
+  </releases>
   <content_rating type="oars-1.1" />
 </component>
