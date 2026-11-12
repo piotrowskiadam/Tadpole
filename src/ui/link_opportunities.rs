@@ -126,6 +126,11 @@ pub struct LinkOpportunitiesPanel {
     status_label: gtk::Label,
     opp_sel: gtk::SingleSelection,
     _export_button: gtk::Button,
+    target_entry: gtk::Entry,
+    analyze_button: gtk::Button,
+    cancel_button: gtk::Button,
+    cancel_token: Rc<RefCell<Option<Arc<AtomicBool>>>>,
+    analysis_epoch: Rc<std::cell::Cell<u64>>,
 }
 
 impl LinkOpportunitiesPanel {
@@ -157,6 +162,13 @@ impl LinkOpportunitiesPanel {
             .sensitive(false)
             .build();
         toolbar.append(&export_button);
+        let target_entry = gtk::Entry::builder()
+            .placeholder_text("All target URLs (or enter one URL)")
+            .hexpand(true)
+            .build();
+        target_entry
+            .update_property(&[gtk::accessible::Property::Label("Link analysis target URL")]);
+        toolbar.append(&target_entry);
 
         let status_label = gtk::Label::new(Some("Ready (click Analyze to process crawled pages)"));
         status_label.add_css_class("dim-label");
@@ -263,6 +275,9 @@ impl LinkOpportunitiesPanel {
         let export_button_clone = export_button.clone();
 
         let current_cancel_token = Rc::new(RefCell::new(None::<Arc<AtomicBool>>));
+        let cancel_token_for_panel = current_cancel_token.clone();
+        let analysis_epoch = Rc::new(std::cell::Cell::new(0u64));
+        let epoch_for_analysis = analysis_epoch.clone();
         let cancel_token_for_btn = current_cancel_token.clone();
 
         cancel_button.connect_clicked(move |_| {
@@ -329,6 +344,9 @@ impl LinkOpportunitiesPanel {
         });
 
         let export_button_inner = export_button.clone();
+        let target_for_analysis = target_entry.clone();
+        let analyze_button_for_panel = analyze_button.clone();
+        let cancel_button_for_panel = cancel_button.clone();
         analyze_button.connect_clicked(move |_| {
             button_clone.set_sensitive(false);
             cancel_button_clone.set_sensitive(true);
@@ -336,6 +354,10 @@ impl LinkOpportunitiesPanel {
             status_lbl_clone.set_text("Analyzing website structure in background...");
 
             let results = state_clone.get_all_results();
+            let target_filter = target_for_analysis.text().trim().to_string();
+            let reachable_sources: Option<std::collections::HashSet<String>> = if target_filter.is_empty() { None } else {
+                state_clone.discovery().filter(|s| s.coverage.reachability_available()).map(|s| s.rows.into_iter().filter(|r| r.reached_depth.is_some()).map(|r| r.url).collect())
+            };
             if results.is_empty() {
                 status_lbl_clone.set_text("No crawled pages to analyze. Please run a crawl first.");
                 button_clone.set_sensitive(true);
@@ -344,7 +366,12 @@ impl LinkOpportunitiesPanel {
             }
 
             let token = Arc::new(AtomicBool::new(false));
+            let generation = epoch_for_analysis.get().wrapping_add(1);
+            epoch_for_analysis.set(generation);
+            let epoch_for_updates = epoch_for_analysis.clone();
             *current_cancel_token.borrow_mut() = Some(token.clone());
+            target_for_analysis.set_sensitive(false);
+            let target_entry_inner = target_for_analysis.clone();
 
             let status_lbl_inner = status_lbl_clone.clone();
             let opp_store_inner = opp_store_clone.clone();
@@ -358,6 +385,7 @@ impl LinkOpportunitiesPanel {
             // Receive streaming updates on the main UI thread
             glib::MainContext::default().spawn_local(async move {
                 while let Some(update) = rx.recv().await {
+                    if epoch_for_updates.get() != generation { break; }
                     match update {
                         AnalysisUpdate::Progress { processed, total, opp_count, ngram_count } => {
                             let dots = match processed % 3 {
@@ -388,11 +416,13 @@ impl LinkOpportunitiesPanel {
                                 opp_count, ngram_count
                             ));
                             button_inner.set_sensitive(true);
+                            target_entry_inner.set_sensitive(true);
                             cancel_inner.set_sensitive(false);
                             export_inner.set_sensitive(opp_count > 0);
                         }
                         AnalysisUpdate::Cancelled => {
                             status_lbl_inner.set_text("Analysis cancelled by user.");
+                            target_entry_inner.set_sensitive(true);
                             button_inner.set_sensitive(true);
                             cancel_inner.set_sensitive(false);
                             export_inner.set_sensitive(opp_store_inner.n_items() > 0);
@@ -408,6 +438,7 @@ impl LinkOpportunitiesPanel {
 
                 let mut target_pages = vec![];
                 for res in &results {
+                    if !target_filter.is_empty() && res.url != target_filter { continue; }
                     if res.status_code.map_or(false, |c| c >= 200 && c < 300) && res.indexable {
                         let title = res.title.clone().unwrap_or_default();
                         let h1 = res.h1.clone().unwrap_or_default();
@@ -435,6 +466,7 @@ impl LinkOpportunitiesPanel {
                     if !source.status_code.map_or(false, |c| c >= 200 && c < 300) {
                         continue;
                     }
+                    if !target_filter.is_empty() && (!source.indexable || reachable_sources.as_ref().is_some_and(|sources| !sources.contains(&source.url))) { continue; }
 
                     let source_title = source.title.clone().unwrap_or_default();
                     let source_h1 = source.h1.clone().unwrap_or_default();
@@ -551,7 +583,22 @@ impl LinkOpportunitiesPanel {
             status_label,
             opp_sel,
             _export_button: export_button,
+            target_entry,
+            analyze_button: analyze_button_for_panel,
+            cancel_button: cancel_button_for_panel,
+            cancel_token: cancel_token_for_panel,
+            analysis_epoch,
         }
+    }
+
+    pub fn analyze_target(&self, url: &str) {
+        if !self.analyze_button.is_sensitive() {
+            self.status_label
+                .set_text("Cancel the current analysis before analyzing another target.");
+            return;
+        }
+        self.target_entry.set_text(url);
+        self.analyze_button.emit_clicked();
     }
 
     pub fn connect_selection_changed<F>(&self, callback: F)
@@ -578,6 +625,16 @@ impl LinkOpportunitiesPanel {
     }
 
     pub fn clear(&self) {
+        self.analysis_epoch
+            .set(self.analysis_epoch.get().wrapping_add(1));
+        if let Some(token) = self.cancel_token.borrow_mut().take() {
+            token.store(true, Ordering::Relaxed);
+        }
+        self.analyze_button.set_sensitive(true);
+        self.cancel_button.set_sensitive(false);
+        self.target_entry.set_text("");
+        self.target_entry.set_sensitive(true);
+        self._export_button.set_sensitive(false);
         self.opp_store.remove_all();
         self.ngram_store.remove_all();
         self.status_label

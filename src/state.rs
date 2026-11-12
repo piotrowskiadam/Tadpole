@@ -76,6 +76,14 @@ pub struct CrawlResult {
 }
 
 impl CrawlResult {
+    pub fn depth_label(&self) -> String {
+        if self.depth == crate::discovery::UNKNOWN_DEPTH {
+            "—".into()
+        } else {
+            self.depth.to_string()
+        }
+    }
+
     pub fn new_failed(
         url: String,
         status_code: Option<u16>,
@@ -154,6 +162,8 @@ pub struct CrawlConfig {
     pub extract_microdata: bool,
     pub include_regex: Option<String>,
     pub exclude_regex: Option<String>,
+    pub sitemap_enabled: bool,
+    pub sitemap_urls: Vec<String>,
 
     // AI Settings
     pub ai_provider: String, // "OpenAI" or "OpenRouter"
@@ -196,6 +206,8 @@ impl Default for CrawlConfig {
             extract_microdata: false,
             include_regex: None,
             exclude_regex: None,
+            sitemap_enabled: true,
+            sitemap_urls: Vec::new(),
             ai_provider: "OpenAI".to_string(),
             ai_api_key: None,
             ai_model: "gpt-4o".to_string(),
@@ -223,6 +235,7 @@ pub struct CrawlStateInner {
     pub stop_requested: bool,
     pub config: CrawlConfig,
     pub inlinks_map: HashMap<String, HashSet<String>>,
+    pub discovery: Option<crate::discovery::DiscoverySnapshot>,
 }
 
 #[derive(Clone)]
@@ -242,6 +255,7 @@ impl CrawlState {
                 stop_requested: false,
                 config: CrawlConfig::default(),
                 inlinks_map: HashMap::new(),
+                discovery: None,
             })),
         }
     }
@@ -255,6 +269,37 @@ impl CrawlState {
         inner.is_paused = false;
         inner.stop_requested = false;
         inner.inlinks_map.clear();
+        inner.discovery = None;
+    }
+
+    pub fn discovery(&self) -> Option<crate::discovery::DiscoverySnapshot> {
+        self.inner.read().discovery.clone()
+    }
+
+    pub fn set_discovery(&self, snapshot: Option<crate::discovery::DiscoverySnapshot>) {
+        self.inner.write().discovery = snapshot;
+    }
+
+    pub fn update_discovery(&self, update: impl FnOnce(&mut crate::discovery::DiscoverySnapshot)) {
+        if let Some(snapshot) = &mut self.inner.write().discovery {
+            update(snapshot);
+        }
+    }
+
+    pub fn is_discovered(&self, url: &str) -> bool {
+        self.inner.read().discovered_set.contains(url)
+    }
+
+    pub fn apply_discovery_depths(&self, rows: &[crate::discovery::DiscoveryRow]) {
+        let mut inner = self.inner.write();
+        for row in rows {
+            if let Some(page) = inner.urls.get_mut(&row.url)
+                && page.depth == crate::discovery::UNKNOWN_DEPTH
+                && let Some(depth) = row.reached_depth
+            {
+                page.depth = depth;
+            }
+        }
     }
 
     pub fn get_result(&self, url: &str) -> Option<CrawlResult> {
@@ -412,11 +457,24 @@ impl CrawlState {
         self.inner.write().config = config;
     }
 
-    pub fn load_project(&self, project: CrawlProject) {
+    pub fn load_project(&self, mut project: CrawlProject) {
+        if let Some(snapshot) = &mut project.discovery
+            && !snapshot.coverage.finished
+        {
+            snapshot.coverage.finished = true;
+            snapshot.coverage.stopped = true;
+            snapshot.coverage.phase = "Loaded an incomplete saved crawl".into();
+            snapshot.collection.warnings.push(
+                "Saved before the crawl finished; sitemap and link coverage may be incomplete."
+                    .into(),
+            );
+            crate::discovery::reconcile(snapshot, &project.results);
+        }
         let mut inner = self.inner.write();
         inner.urls.clear();
         inner.discovered_set.clear();
         inner.inlinks_map.clear();
+        inner.discovery = project.discovery;
         for res in &project.results {
             inner.urls.insert(res.url.clone(), res.clone());
             inner.discovered_set.insert(res.url.clone());
@@ -460,6 +518,7 @@ impl CrawlState {
             config: inner.config.clone(),
             results: inner.urls.values().cloned().collect(),
             stats: inner.stats,
+            discovery: inner.discovery.clone(),
         }
     }
 }
@@ -470,6 +529,8 @@ pub struct CrawlProject {
     pub config: CrawlConfig,
     pub results: Vec<CrawlResult>,
     pub stats: CrawlStats,
+    #[serde(default)]
+    pub discovery: Option<crate::discovery::DiscoverySnapshot>,
 }
 
 impl Default for CrawlState {
@@ -493,6 +554,17 @@ impl std::fmt::Debug for CrawlConfig {
 
 impl CrawlConfig {
     pub fn validate(&self) -> Result<(), String> {
+        if self.sitemap_urls.len() > crate::sitemap::MAX_SOURCES
+            || self
+                .sitemap_urls
+                .iter()
+                .any(|url| crate::discovery::normalize_url(url).is_none())
+        {
+            return Err(format!(
+                "Configure at most {} HTTP(S) sitemap URLs without embedded credentials.",
+                crate::sitemap::MAX_SOURCES
+            ));
+        }
         if self.max_urls == 0 || !(1..=50).contains(&self.max_concurrency) {
             return Err("Set a positive URL limit and concurrency between 1 and 50.".into());
         }

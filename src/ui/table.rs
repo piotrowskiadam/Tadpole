@@ -219,7 +219,7 @@ impl Table {
         column_view.append_column(&col_size);
 
         // Column 7: Depth
-        let col_depth = Self::create_text_column("Depth", |res| res.depth.to_string());
+        let col_depth = Self::create_text_column("Depth", |res| res.depth_label());
         let sort_depth = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -634,7 +634,7 @@ impl Table {
                             res.word_count.to_string(),
                             res.size_bytes.to_string(),
                             canonical_str,
-                            res.depth.to_string(),
+                            res.depth_label(),
                             res.response_time_ms.to_string(),
                             inlinks_str,
                             outlinks_str,

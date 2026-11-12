@@ -9,7 +9,10 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 | `src/main.rs` | Runtime/application startup and platform-specific loader setup |
 | `src/state.rs` | Shared `CrawlState`, results, config, counters and portable project format |
 | `src/crawler.rs` | HTTP scheduling, HTML extraction, optional browser rendering and resource discovery |
-| `src/robots.rs` | Robots groups, agent specificity and longest-match Allow/Disallow rules |
+| `src/robots.rs` | Robots groups, agent specificity, longest-match Allow/Disallow and global sitemap declarations |
+| `src/sitemap.rs` | Bounded same-site XML/index/gzip ingestion with source provenance and failures |
+| `src/discovery.rs` | Reachability, sitemap reconciliation, coverage, project snapshot and CSV export |
+| `src/ui/discovery.rs` | Native Sitemap & Discovery report, sources, filters and selected evidence |
 | `src/http.rs` | Response allocation limits, independent of Content-Length |
 | `src/markdown.rs` | HTML-to-Markdown conversion and extraction settings |
 | `src/filters.rs` | GTK-independent audit filters and duplicate indexes |
@@ -41,7 +44,7 @@ The discovery/event channels are unbounded channel types; the admitted URL count
 
 ## Project compatibility and secrets
 
-`.seocrawl` remains JSON with `seed_url`, `config`, `results`, and `stats`. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
+`.seocrawl` remains JSON with `seed_url`, `config`, `results`, `stats`, and an optional `discovery` snapshot. Older projects load without fabricated discovery evidence. An unfinished snapshot reopens as stopped, partial evidence. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
 
 Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` implementation. Old embedded keys are ignored when loading. They still exist in old files on disk until the owner removes them. Atomic saves write/sync a private temporary file beside the destination and replace it only after successful serialization. A compact format reduces file size without changing the schema.
 
@@ -56,3 +59,11 @@ The AI module has no GTK dependency. Page-level suggestion actions supply sessio
 The shipped UI is a Cairo icicle view. Compact graph algorithms and JSON message types exist, but there is no embedded Sigma.js/D3/WebGL renderer. `CairoCanvasRenderer` is an interface placeholder; actual drawing happens in `site_visualizer.rs`. The older implementation plan and protocol are design references, not a list of shipped capabilities. Layout caches are cleared on snapshot replacement; equal node/edge counts do not identify equal topology.
 
 See [development](docs/DEVELOPMENT.md) for operational limits and [audit](docs/AUDIT.md) for findings and remaining work.
+
+## Sitemap discovery lifecycle
+
+Sitemap collection is an owned future polled alongside the ordinary page workers. The ordinary seed(s) remain the only graph roots. After link traversal and source collection finish, sitemap-only pages are inspected within the remaining admitted URL limit. Source records and declared URLs have independent bounds; source failures retain successful siblings. Stop drains page workers and cancels source collection before publishing final evidence.
+
+Pure reconciliation runs off the GTK thread and distinguishes actual hyperlink inlinks, observed root paths, sitemap membership and page observations. An auxiliary result uses `UNKNOWN_DEPTH` until an observed path is recovered. It is never presented as depth zero. CSV and native filters use the same typed finding set, including overlapping findings and unknown observations. Effective mode/scope, limits, timestamps, source coverage and response destinations remain attached to the snapshot.
+
+The main notebook contains the complete Crawl Results workspace, Sitemap & Discovery and Link Opportunities. Each report owns its data-specific filters and evidence; the existing crawl sidebar/details/summary remain inside Crawl Results. Explicit linking handoff selects one target; analysis generations prevent cancelled/replaced runs from publishing stale results.

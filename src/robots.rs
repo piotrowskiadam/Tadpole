@@ -1,8 +1,9 @@
 //! robots.txt groups, longest matching Allow/Disallow rule, `*` and terminal `$`.
-//! Crawl-delay and sitemap discovery are not implemented.
+//! Sitemap declarations are global and independent of user-agent rule groups.
 #[derive(Clone, Default)]
 pub struct RobotsRules {
     rules: Vec<(regex::Regex, usize, bool)>,
+    pub sitemaps: Vec<String>,
 }
 
 pub fn parse(content: &str, user_agent: &str) -> RobotsRules {
@@ -52,6 +53,15 @@ pub fn parse(content: &str, user_agent: &str) -> RobotsRules {
     };
     let best = groups.iter().filter_map(|(a, _)| specificity(a)).max();
     let mut result = RobotsRules::default();
+    for line in content.lines() {
+        if let Some((key, value)) = line.split('#').next().unwrap_or("").split_once(':')
+            && key.trim().eq_ignore_ascii_case("sitemap")
+            && !value.trim().is_empty()
+            && !result.sitemaps.iter().any(|s| s == value.trim())
+        {
+            result.sitemaps.push(value.trim().to_string());
+        }
+    }
     for (agents, rules) in groups {
         if best.is_none() || specificity(&agents) != best {
             continue;

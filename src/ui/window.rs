@@ -37,6 +37,7 @@ pub struct MainWindow {
     details: Rc<Details>,
     summary_panel: Rc<crate::ui::summary::SummaryPanel>,
     link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
+    discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
     visualizer_button: gtk::Button,
 
     // Header bar controls
@@ -240,7 +241,10 @@ impl MainWindow {
         let content_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         content_box.set_vexpand(true);
         content_box.set_hexpand(true);
-        main_box.append(&content_box);
+        let main_notebook = gtk::Notebook::new();
+        main_notebook.set_vexpand(true);
+        main_notebook.set_hexpand(true);
+        main_box.append(&main_notebook);
 
         let main_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         main_paned.set_position(260);
@@ -349,18 +353,39 @@ impl MainWindow {
             crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()),
         );
 
-        // Main notebook for crawl results / linking opportunities
-        let main_notebook = gtk::Notebook::new();
-        main_notebook.set_vexpand(true);
-        main_notebook.set_hexpand(true);
-
-        main_notebook.append_page(&table_box, Some(&gtk::Label::new(Some("Crawl Results"))));
+        right_paned.set_start_child(Some(&table_box));
+        main_notebook.append_page(&content_box, Some(&gtk::Label::new(Some("Crawl Results"))));
+        let discovery = crate::ui::discovery::DiscoveryPanel::new(
+            state.clone(),
+            {
+                let links = link_opportunities.clone();
+                let notebook = main_notebook.downgrade();
+                move |target| {
+                    links.analyze_target(&target);
+                    if let Some(notebook) = notebook.upgrade() {
+                        notebook.set_current_page(Some(2));
+                    }
+                }
+            },
+            {
+                let start = start_button.downgrade();
+                move || {
+                    if let Some(start) = start.upgrade()
+                        && start.is_sensitive()
+                    {
+                        start.emit_clicked();
+                    }
+                }
+            },
+        );
+        main_notebook.append_page(
+            discovery.widget(),
+            Some(&gtk::Label::new(Some("Sitemap & Discovery"))),
+        );
         main_notebook.append_page(
             link_opportunities.widget(),
             Some(&gtk::Label::new(Some("Link Opportunities (beta)"))),
         );
-
-        right_paned.set_start_child(Some(&main_notebook));
 
         let details = Rc::new(Details::new());
         right_paned.set_end_child(Some(details.widget()));
@@ -391,6 +416,7 @@ impl MainWindow {
             window.add_breakpoint(breakpoint);
             toggle.connect_toggled(move |button| widget.set_visible(button.is_active()));
             header_bar.pack_end(&toggle);
+            main_notebook.connect_switch_page(move |_, _, index| toggle.set_visible(index == 0));
         }
 
         // --- Status Bar ---
@@ -421,6 +447,7 @@ impl MainWindow {
             details,
             summary_panel,
             link_opportunities,
+            discovery,
             visualizer_button,
             address_entry,
             start_button,
@@ -465,6 +492,23 @@ impl MainWindow {
 
     pub fn present(&self) {
         self.window.present();
+    }
+
+    /// Explicit fixture setup for the isolated preview example. Uses the real
+    /// start handler and report rather than injecting synthetic crawl results.
+    pub fn preview_discovery_crawl(&self, seed: &str) {
+        self.discovery
+            .select_finding(crate::discovery::Finding::Unreached);
+        self.address_entry.set_text(seed);
+        self.start_button.emit_clicked();
+        if let Some(notebook) = self
+            .discovery
+            .widget()
+            .ancestor(gtk::Notebook::static_type())
+            .and_downcast::<gtk::Notebook>()
+        {
+            notebook.set_current_page(Some(1));
+        }
     }
 
     /// Populate a fresh media-mode window with fictional, offline crawl data.
@@ -530,6 +574,7 @@ impl MainWindow {
         let edit_list_button = self.edit_list_button.clone();
         let loaded_list_urls = self.loaded_list_urls.clone();
         let link_opps = self.link_opportunities.clone();
+        let discovery = self.discovery.clone();
         let vis_button = self.visualizer_button.clone();
 
         // Create thread-safe Tokio channel
@@ -1297,6 +1342,8 @@ impl MainWindow {
                     extract_microdata: extract_microdata_row.is_active(),
                     include_regex: if include_text.trim().is_empty() { None } else { Some(include_text) },
                     exclude_regex: if exclude_text.trim().is_empty() { None } else { Some(exclude_text) },
+                    sitemap_enabled: current_config.sitemap_enabled,
+                    sitemap_urls: current_config.sitemap_urls,
                     ai_provider: provider,
                     ai_api_key: if api_key_text.trim().is_empty() { None } else { Some(api_key_text) },
                     ai_model: final_model,
@@ -1560,6 +1607,7 @@ impl MainWindow {
         let edit_list_button_open = edit_list_button.clone();
         let loaded_list_urls_open = loaded_list_urls.clone();
         let link_opps_open = link_opps.clone();
+        let discovery_open = discovery.clone();
         let status_label_open = status_label.clone();
         let busy_open = ui_busy.clone();
         let crawl_active_open = ui_crawl_active.clone();
@@ -1587,6 +1635,7 @@ impl MainWindow {
             let edit_list_button_inner = edit_list_button_open.clone();
             let loaded_list_urls_inner = loaded_list_urls_open.clone();
             let link_opps_inner = link_opps_open.clone();
+            let discovery_inner = discovery_open.clone();
             let status_label_inner = status_label_open.clone();
 
             dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
@@ -1606,6 +1655,7 @@ impl MainWindow {
                         let edit_list_bg = edit_list_button_inner.clone();
                         let loaded_list_ref = loaded_list_urls_inner.clone();
                         let link_opps_bg = link_opps_inner.clone();
+                        let discovery_bg = discovery_inner.clone();
                         let status_label_bg = status_label_inner.clone();
 
                         glib::MainContext::default().spawn_local(async move {
@@ -1641,6 +1691,7 @@ impl MainWindow {
 
                                 sidebar_bg.update_counts(&state_bg);
                                 summary_bg.update(&state_bg);
+                                discovery_bg.refresh();
 
                                 let config = state_bg.get_config();
                                 let selected_idx = match config.crawl_mode {
@@ -1687,11 +1738,18 @@ impl MainWindow {
         let crawl_samples_clone = crawl_samples.clone();
         let busy_finish = ui_busy.clone();
         let crawl_active_finish = ui_crawl_active.clone();
+        let discovery_finish = discovery.clone();
 
         glib::MainContext::default().spawn_local(async move {
             let mut last_refresh = std::time::Instant::now();
             while let Some(update) = rx.recv().await {
                 match update {
+                    CrawlUpdate::Discovery => {
+                        if last_refresh.elapsed() >= std::time::Duration::from_millis(250) {
+                            discovery_finish.refresh();
+                            last_refresh = std::time::Instant::now();
+                        }
+                    },
                     CrawlUpdate::Discovered(url) => {
                         status_label_clone.set_text(&format!("Discovered: {}", url));
                     }
@@ -1808,6 +1866,7 @@ impl MainWindow {
                         sidebar_clone.update_counts(&state_clone);
                         summary_panel_clone.update(&state_clone);
                         table_clone.set_filter(table_clone.get_active_filter());
+                        discovery_finish.refresh();
                         crawl_active_finish.set(false);
                     }
                 }
@@ -1827,6 +1886,7 @@ impl MainWindow {
         let summary_panel_start = summary_panel.clone();
         let loaded_list_urls_start = loaded_list_urls.clone();
         let link_opps_start = link_opps.clone();
+        let discovery_start = discovery.clone();
         let window_start = self.window.clone();
         let crawl_start_time_start = crawl_start_time.clone();
         let crawl_samples_start = crawl_samples.clone();
@@ -1879,6 +1939,7 @@ impl MainWindow {
                     let table_start = table_start.clone();
                     let details_start = details_start.clone();
                     let link_opps_start = link_opps_start.clone();
+                    let discovery_start = discovery_start.clone();
                     let sidebar_start = sidebar_start.clone();
                     let summary_panel_start = summary_panel_start.clone();
                     let pause_button_start = pause_button_start.clone();
@@ -1899,6 +1960,7 @@ impl MainWindow {
                         table_start.clear();
                         details_start.clear();
                         link_opps_start.clear();
+                        discovery_start.refresh();
                         sidebar_start.update_counts(&state_start);
                         summary_panel_start.update(&state_start);
 

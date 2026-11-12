@@ -170,7 +170,7 @@ impl SnapshotBuilder {
             builder.raw_nodes.push(RawNode {
                 url: res.url.clone(),
                 status_code: status,
-                crawl_depth: res.depth as u16,
+                crawl_depth: u16::try_from(res.depth).unwrap_or(u16::MAX),
                 path_depth,
                 response_time_ms: res.response_time_ms,
                 page_size_bytes: res.size_bytes as u64,
@@ -290,7 +290,7 @@ impl SnapshotBuilder {
                 metrics.orphan_count += 1;
             }
 
-            if raw.crawl_depth as usize > metrics.max_crawl_depth {
+            if raw.crawl_depth != u16::MAX && raw.crawl_depth as usize > metrics.max_crawl_depth {
                 metrics.max_crawl_depth = raw.crawl_depth as usize;
             }
             if unique_in_degrees[idx] > metrics.max_in_degree {

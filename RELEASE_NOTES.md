@@ -1,5 +1,17 @@
 # Tadpole releases
 
+## 0.5.0 — Sitemap & Discovery
+
+- Collect XML sitemap URL sets, indexes and gzip files from robots.txt or manual same-site sources, with bounded downloads and visible source errors.
+- Compare declarations with real link reachability; inspect candidate orphan pages, sitemap HTTP errors, redirects, noindex directives, canonical differences and URLs absent from imported sources.
+- Keep unknown observations explicit, preserve crawl limits and cancellation, and save discovery evidence with `.seocrawl` projects. Legacy projects remain readable.
+- Review findings in a native searchable/sortable report, export coverage-aware CSV, and explicitly analyze reachable linking sources for a selected candidate target.
+- Preserve the full Crawl Results workspace inside its tab. Unknown auxiliary depth is displayed as unknown throughout tables, export and graph metrics.
+
+Existing `.seocrawl` projects remain readable. Recrawl to collect discovery evidence for older projects. Candidate orphan findings describe observed crawl scope, and missing sitemap membership is a review opportunity; neither establishes Google indexing. Source changes apply to a new crawl through **Manage sitemaps → Apply and recrawl**.
+
+Validation includes 53 passing tests in a serialized run, strict core Clippy, an optimized Linux build and native light/dark review against a real local HTTP fixture. Windows packages are built by CI; clean-machine Windows runtime, accessibility and native file-dialog operation have not been independently validated. Snap Store publication is separate from the GitHub release.
+
 ## 0.4.2 — Richer page inspection
 
 - **Inlinks and Outlinks:** inspect each link occurrence in wrapping tables with source URL, target URL, anchor text and `rel`. Fragment targets and repeated links are retained. Activate a row to select the related crawled page, or export the richer data to CSV.

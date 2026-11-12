@@ -1,5 +1,6 @@
 mod detail_table;
 pub mod details;
+pub mod discovery;
 mod image_preview;
 pub mod link_opportunities;
 pub mod media;

@@ -127,7 +127,7 @@ impl SummaryPanel {
         vbox.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
         // ── Crawl Depth Distribution ───────────────────────────────────────
-        vbox.append(&section_label("Crawl Depth Distribution"));
+        vbox.append(&section_label("Known Link Depths"));
 
         let depth_drawing = gtk::DrawingArea::new();
         depth_drawing.set_height_request(120);
@@ -286,6 +286,9 @@ impl SummaryPanel {
         // Pass depth counts to the drawing area via a shared Vec via draw function
         let mut depth_counts: Vec<usize> = vec![0usize; 6]; // 0..5+
         for r in &results {
+            if r.depth == crate::discovery::UNKNOWN_DEPTH {
+                continue;
+            }
             let d = r.depth.min(5);
             depth_counts[d] += 1;
         }

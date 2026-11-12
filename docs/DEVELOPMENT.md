@@ -64,7 +64,7 @@ Use the opt-in offline media mode for store screenshots and short frame recordin
 
 - HTML downloads are capped at 8 MiB, images at 20 MiB, provider replies at 2 MiB. Download timeouts are 10 seconds for crawl HTTP and 90 seconds for provider calls. These are current implementation constants.
 - Raw page results, Markdown and links remain in memory; full project load/save still uses an in-memory snapshot. For very large crawls, consider a disk-backed result store and incremental aggregate state before raising advertised limits.
-- Robots handling supports agent groups, wildcard rules and longest-match Allow precedence. It is not a formal RFC conformance certification. Sitemap ingestion, crawl-delay and full percent-encoding normalization remain work for a dedicated crawler-policy module.
+- Robots handling supports agent groups, wildcard rules and longest-match Allow precedence. It is not a formal RFC conformance certification. Sitemap declarations are collected independently of agent groups. Crawl-delay and full percent-encoding normalization remain work for a dedicated crawler-policy module.
 - Automatic redirect following reports the final HTTP status; it does not preserve full hop-by-hop redirect history. Indexability is a local heuristic, not a guarantee of search-engine indexing.
 - Link-opportunity analysis is a cancellable background operation, but its pairwise source/target scan remains expensive for very large sites.
 - JSON-LD validation is intentionally limited. Metadata recommendations and text-only alt suggestions require human review.
@@ -79,3 +79,17 @@ Contracts checked against primary documentation on 2026-10-31:
 
 - [OpenRouter API overview](https://openrouter.ai/docs/api/reference/overview): endpoint, messages/model, output limit, attribution headers, completion text.
 - [OpenRouter error handling](https://openrouter.ai/docs/api_reference/errors-and-debugging): HTTP/provider error cases.
+
+## Sitemap and discovery audits
+
+`src/sitemap.rs` parses UTF-8 XML URL sets and indexes (including namespaces, entity references and gzip) with quick-xml and flate2. DOCTYPEs and malformed entries are rejected. Same-site boundaries, deduplication, index-depth/source/byte/catalogue limits and source-specific errors apply independently of the page budget. Limits are 64 source files, five nested index levels, 50,000 unique declared URLs, 8 MiB downloaded and 50 MiB decoded per source. These are application resource limits, not a claim to accept every maximum-size protocol file. [Sitemap protocol](https://www.sitemaps.org/protocol.html).
+
+The coordinator polls sitemap collection alongside ordinary crawl workers, prioritizes ordinary link traversal, then uses remaining URL capacity for sitemap-only inspections. The collection future is owned by the coordinator and is dropped on stop. Auxiliary inspections record actual links without inserting sitemap edges or roots. `discovery::UNKNOWN_DEPTH` represents an auxiliary page without an observed root path; UI/CSV show a dash, summary depth charts exclude it, and graph layouts keep unknown nodes in a separate display band. Reconciliation can subsequently recover a real observed depth.
+
+`src/discovery.rs` owns graph reachability, overlapping findings, coverage and shared CSV export. Discovery collection, response observations and reconciled rows are saved in an optional project snapshot. Legacy projects show “not collected”; a snapshot saved during a crawl reopens as stopped, partial evidence. Missing sitemap membership is a review opportunity; no report claims Google indexing. List/URL modes do not establish ordinary root reachability.
+
+`src/ui/discovery.rs` presents live source progress, filtered/sortable URLs, selected-page evidence, source setup and export. Source configuration applies to the next crawl; **Apply and recrawl** uses the existing crawl replacement flow. The linking handoff runs explicitly for the selected target and uses reachable, indexable source pages where discovery evidence exists. Clear/replacement cancels and invalidates older link-analysis updates.
+
+For an isolated real-workspace check, start a local fixture server, connect a GTK Broadway client, then run the `ui_preview` example with `TADPOLE_PREVIEW_URL` set to that fixture. This explicit preview variable starts a real crawl; it does not inject results. `TADPOLE_PREVIEW_THEME=light|dark`, `TADPOLE_PREVIEW_WIDTH` and `TADPOLE_PREVIEW_HEIGHT` control the fixture view. Ordinary application startup does not read these preview variables.
+
+`tests/discovery.rs` covers namespaces/entities, gzip limits, malformed XML, disconnected linked groups, duplicate/cyclic/recursive indexes, partial source failure, same-site scope, redirects/noindex/canonical findings, a shared page budget, CSV unknown values, cancellation without late updates, legacy persistence and interrupted saved crawls. Run it with the core or full suite; its integration cases bind a local HTTP port.

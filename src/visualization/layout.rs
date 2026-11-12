@@ -139,10 +139,19 @@ fn compute_force_atlas_2(snapshot: &GraphSnapshot, seed: u64) -> Vec<NodePositio
 }
 
 fn compute_radial_depth(snapshot: &GraphSnapshot) -> Vec<NodePosition> {
+    let unknown_band = snapshot
+        .metrics
+        .max_crawl_depth
+        .saturating_add(1)
+        .min(u16::MAX as usize) as u16;
     let mut depth_groups: HashMap<u16, Vec<NodeId>> = HashMap::new();
     for node in snapshot.nodes.iter() {
         depth_groups
-            .entry(node.crawl_depth)
+            .entry(if node.crawl_depth == u16::MAX {
+                unknown_band
+            } else {
+                node.crawl_depth
+            })
             .or_default()
             .push(node.id);
     }
@@ -211,10 +220,19 @@ fn compute_section_first(snapshot: &GraphSnapshot, seed: u64) -> Vec<NodePositio
 }
 
 fn compute_hierarchical(snapshot: &GraphSnapshot) -> Vec<NodePosition> {
+    let unknown_band = snapshot
+        .metrics
+        .max_crawl_depth
+        .saturating_add(1)
+        .min(u16::MAX as usize) as u16;
     let mut depth_groups: HashMap<u16, Vec<NodeId>> = HashMap::new();
     for node in snapshot.nodes.iter() {
         depth_groups
-            .entry(node.crawl_depth)
+            .entry(if node.crawl_depth == u16::MAX {
+                unknown_band
+            } else {
+                node.crawl_depth
+            })
             .or_default()
             .push(node.id);
     }

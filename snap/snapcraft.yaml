@@ -1,6 +1,6 @@
 name: tadpole
 base: core24
-version: '0.4.2'
+version: '0.5.0'
 website: https://github.com/piotrowskiadam/Tadpole
 contact: https://github.com/piotrowskiadam/Tadpole/issues
 source-code: https://github.com/piotrowskiadam/Tadpole
@@ -16,6 +16,7 @@ description: |
   * Crawl a website, a path, one page or your own list of URLs.
   * Inspect HTTP status, indexability, titles, descriptions, canonicals, headings and images.
   * Review Open Graph and Twitter metadata, JSON-LD diagnostics and extracted Markdown.
+  * Compare XML and gzip sitemaps with internal-link reachability, review candidate orphan pages and export discovery findings.
   * Set URL and depth limits, concurrency, include/exclude patterns and robots.txt handling.
 
   **Understand how your site connects**

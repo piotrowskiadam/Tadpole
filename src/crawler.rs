@@ -3,6 +3,7 @@ use crate::state::{
 };
 use scraper::{Html, Selector};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use url::Url;
@@ -11,6 +12,7 @@ use url::Url;
 pub enum CrawlUpdate {
     Discovered(String),
     Crawled(Box<CrawlResult>),
+    Discovery,
     Finished,
 }
 
@@ -32,6 +34,9 @@ struct CrawlRun {
     robots: tokio::sync::Mutex<std::collections::HashMap<String, crate::robots::RobotsRules>>,
     config: CrawlConfig,
     catalogue_url: Option<String>,
+    limit_hit: AtomicBool,
+    depth_hit: AtomicBool,
+    root: String,
 }
 
 impl CrawlRun {
@@ -200,6 +205,15 @@ impl Crawler {
         }
 
         let base_domain = seed_urls[0].host_str().unwrap_or("localhost").to_string();
+        let roots: Vec<String> = seed_urls.iter().map(ToString::to_string).collect();
+        if config.sitemap_enabled {
+            self.state
+                .set_discovery(Some(crate::discovery::DiscoverySnapshot::new(
+                    roots.clone(),
+                    &config,
+                )));
+            let _ = self.tx.send(CrawlUpdate::Discovery);
+        }
 
         if !self.state.is_crawling() {
             self.state.set_crawling(true);
@@ -260,7 +274,40 @@ impl Crawler {
             robots: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             config: config.clone(),
             catalogue_url,
+            limit_hit: AtomicBool::new(false),
+            depth_hit: AtomicBool::new(false),
+            root: roots[0].clone(),
         });
+
+        let source_run = run.clone();
+        let source_state = crawler_arc.state.clone();
+        let source_tx = crawler_arc.tx.clone();
+        let mut sitemap_work = Box::pin(async move {
+            let automatic = matches!(
+                source_run.config.crawl_mode,
+                CrawlMode::Crawl | CrawlMode::Path
+            );
+            if !source_run.config.sitemap_enabled
+                || (!automatic && source_run.config.sitemap_urls.is_empty())
+            {
+                return crate::discovery::SitemapCollection::default();
+            }
+            let rules = source_run.robots_rules(&source_run.root).await;
+            crate::sitemap::collect(
+                &source_run.root,
+                &source_run.config,
+                rules,
+                &source_state,
+                |collection| {
+                    source_state
+                        .update_discovery(|snapshot| snapshot.collection = collection.clone());
+                    let _ = source_tx.send(CrawlUpdate::Discovery);
+                },
+            )
+            .await
+        });
+        let mut sitemaps_done = false;
+        let mut auxiliary_started = false;
 
         // The coordinator owns all workers. Finished is emitted only after every worker
         // has completed or been cancelled; no detached task can modify a later crawl.
@@ -286,9 +333,44 @@ impl Crawler {
             if workers.is_empty()
                 && (queue_rx.is_empty() || crawler_arc.state.check_limit_reached())
             {
-                break;
+                if sitemaps_done && !auxiliary_started {
+                    auxiliary_started = true;
+                    if config.sitemap_enabled
+                        && matches!(config.crawl_mode, CrawlMode::Crawl | CrawlMode::Path)
+                    {
+                        let snapshot = crawler_arc.state.discovery();
+                        if let Some(snapshot) = snapshot {
+                            crawler_arc.state.update_discovery(|s| {
+                                s.coverage.phase = "Checking sitemap-only URLs".into()
+                            });
+                            for url in snapshot.collection.memberships.keys() {
+                                if crawler_arc.state.get_result(url).is_none()
+                                    && crawler_arc.page_allowed(url, &run)
+                                {
+                                    if crawler_arc.state.add_discovered(url) {
+                                        let _ = run
+                                            .queue_tx
+                                            .send((url.clone(), crate::discovery::UNKNOWN_DEPTH));
+                                    } else if !crawler_arc.state.is_discovered(url) {
+                                        run.limit_hit.store(true, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                            let _ = crawler_arc.tx.send(CrawlUpdate::Discovery);
+                        }
+                    }
+                    continue;
+                }
+                if sitemaps_done && auxiliary_started {
+                    break;
+                }
             }
             tokio::select! {
+                collection = &mut sitemap_work, if !sitemaps_done => {
+                    crawler_arc.state.update_discovery(|s| s.collection = collection);
+                    sitemaps_done = true;
+                    let _ = crawler_arc.tx.send(CrawlUpdate::Discovery);
+                }
                 result = workers.join_next(), if !workers.is_empty() => {
                     if let Some(Ok(result)) = result {
                         crawler_arc.state.insert_result(result.clone());
@@ -299,8 +381,39 @@ impl Crawler {
             }
         }
 
+        if let Some(mut snapshot) = crawler_arc.state.discovery() {
+            snapshot.coverage.finished = true;
+            snapshot.coverage.stopped = crawler_arc.state.stop_requested();
+            snapshot.coverage.url_limit_hit = run.limit_hit.load(Ordering::Relaxed);
+            snapshot.coverage.depth_limit_hit = run.depth_hit.load(Ordering::Relaxed);
+            snapshot.coverage.finished_at = Some(crate::discovery::timestamp());
+            snapshot.coverage.phase = "Finished".into();
+            let results = crawler_arc.state.get_all_results();
+            if let Ok(mut snapshot) = tokio::task::spawn_blocking(move || {
+                crate::discovery::reconcile(&mut snapshot, &results);
+                snapshot
+            })
+            .await
+            {
+                snapshot.coverage.stopped |= crawler_arc.state.stop_requested();
+                crawler_arc.state.apply_discovery_depths(&snapshot.rows);
+                crawler_arc.state.set_discovery(Some(snapshot));
+            }
+        }
+
         crawler_arc.state.set_crawling(false);
         let _ = crawler_arc.tx.send(CrawlUpdate::Finished);
+    }
+
+    fn page_allowed(&self, url: &str, run: &CrawlRun) -> bool {
+        crate::discovery::same_site(&run.root, url)
+            && (run.config.crawl_mode != CrawlMode::Path
+                || run
+                    .catalogue_url
+                    .as_ref()
+                    .is_none_or(|root| url.starts_with(root)))
+            && self.include.as_ref().is_none_or(|re| re.is_match(url))
+            && self.exclude.as_ref().is_none_or(|re| !re.is_match(url))
     }
 
     async fn crawl_url(&self, url_str: &str, depth: usize, run: &CrawlRun) -> CrawlResult {
@@ -308,7 +421,6 @@ impl Crawler {
         let config = &run.config;
         let queue_tx = &run.queue_tx;
         let base_domain = &run.base_domain;
-        let catalogue_url = run.catalogue_url.as_deref();
         let state = &self.state;
         let browser = &run.browser;
         let start_time = std::time::Instant::now();
@@ -389,6 +501,18 @@ impl Crawler {
 
         // Handle Redirects manually or check response URL
         let final_url = response.url().to_string();
+        let redirected = status.is_redirection() || final_url != url_str;
+        let destination = if status.is_redirection() {
+            response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|value| response.url().join(value).ok())
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| final_url.clone())
+        } else {
+            final_url.clone()
+        };
         let header_noindex = response
             .headers()
             .get("x-robots-tag")
@@ -398,6 +522,17 @@ impl Crawler {
                     .split([',', ' '])
                     .any(|v| v == "noindex" || v == "none")
             });
+        let mut observed_noindex = header_noindex;
+        state.update_discovery(|s| {
+            s.responses.insert(
+                url_str.into(),
+                crate::discovery::ResponseEvidence {
+                    final_url: crate::discovery::normalize_url(&destination),
+                    noindex: header_noindex,
+                    redirected,
+                },
+            );
+        });
         let mut indexability_status = "Indexable".to_string();
         let mut indexable = true;
 
@@ -496,6 +631,7 @@ impl Crawler {
                 }
 
                 let mut parsed = parse_html(&final_url, &html_str, base_domain, config);
+                observed_noindex |= parsed.noindex;
 
                 // Download images locally if configured
                 if config.download_images
@@ -547,45 +683,24 @@ impl Crawler {
 
                 // Process discovered URLs if in Crawl or Path Mode
                 if config.crawl_mode == CrawlMode::Crawl || config.crawl_mode == CrawlMode::Path {
-                    let next_depth = depth + 1;
+                    let next_depth = depth.saturating_add(1);
                     let under_depth_limit =
                         config.max_depth.is_none_or(|max_d| next_depth <= max_d);
-
-                    if under_depth_limit {
-                        for clean_str in parsed.local_queue {
-                            let mut is_allowed = true;
-
-                            // If Path mode, the URL must belong to the catalogue
-                            if config.crawl_mode == CrawlMode::Path
-                                && let Some(cat_url) = catalogue_url
-                                && !clean_str.starts_with(cat_url)
-                            {
-                                is_allowed = false;
+                    for clean_str in parsed.local_queue {
+                        if self.page_allowed(&clean_str, run) {
+                            state.add_inlink(&clean_str, url_str);
+                            if depth == crate::discovery::UNKNOWN_DEPTH {
+                                continue;
                             }
-
-                            if is_allowed {
-                                if let Some(ref re) = self.include {
-                                    {
-                                        is_allowed = re.is_match(&clean_str);
-                                    }
-                                }
-                                if is_allowed && let Some(ref re) = self.exclude {
-                                    {
-                                        if re.is_match(&clean_str) {
-                                            is_allowed = false;
-                                        }
-                                    }
-                                }
-
-                                if is_allowed {
-                                    if state.add_discovered(&clean_str) {
-                                        let _ = self
-                                            .tx
-                                            .send(CrawlUpdate::Discovered(clean_str.clone()));
-                                        let _ = queue_tx.send((clean_str.clone(), next_depth));
-                                    }
-                                    state.add_inlink(&clean_str, url_str);
-                                }
+                            if !under_depth_limit {
+                                run.depth_hit.store(true, Ordering::Relaxed);
+                                continue;
+                            }
+                            if state.add_discovered(&clean_str) {
+                                let _ = self.tx.send(CrawlUpdate::Discovered(clean_str.clone()));
+                                let _ = queue_tx.send((clean_str, next_depth));
+                            } else if !state.is_discovered(&clean_str) {
+                                run.limit_hit.store(true, Ordering::Relaxed);
                             }
                         }
                     }
@@ -602,6 +717,15 @@ impl Crawler {
             indexability_status = "Non-HTML Resource".to_string();
         }
 
+        state.update_discovery(|s| {
+            if let Some(response) = s.responses.get_mut(url_str) {
+                response.noindex = observed_noindex;
+            }
+        });
+        if redirected {
+            indexable = false;
+            indexability_status = "Redirect".into();
+        }
         CrawlResult {
             url: url_str.to_string(),
             status_code: Some(status_code),

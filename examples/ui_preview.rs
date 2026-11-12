@@ -12,7 +12,13 @@ fn main() {
         .build();
     app.connect_activate(|app| {
         tadpole::ui::theme::install();
-        if std::env::var_os("TADPOLE_PREVIEW_LIGHT").is_some() {
+        if let Ok(theme) = std::env::var("TADPOLE_PREVIEW_THEME") {
+            adw::StyleManager::default().set_color_scheme(if theme == "dark" {
+                adw::ColorScheme::ForceDark
+            } else {
+                adw::ColorScheme::ForceLight
+            });
+        } else if std::env::var_os("TADPOLE_PREVIEW_LIGHT").is_some() {
             adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight);
         }
         let main = tadpole::ui::window::MainWindow::new(app);
@@ -20,9 +26,18 @@ fn main() {
             .ok()
             .and_then(|w| w.parse().ok())
         {
-            main.window().set_default_size(width, 760);
+            let height = std::env::var("TADPOLE_PREVIEW_HEIGHT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(800);
+            main.window().set_default_size(width, height);
         }
         main.present();
+        if let Ok(seed) = std::env::var("TADPOLE_PREVIEW_URL") {
+            main.window()
+                .set_title(Some("Tadpole — live local fixture audit"));
+            main.preview_discovery_crawl(&seed);
+        }
     });
     app.run();
 }

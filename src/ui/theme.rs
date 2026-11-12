@@ -11,6 +11,10 @@ pub fn install() {
             .status-bar { border-top: 1px solid @borders; }
             .numeric { font-variant-numeric: tabular-nums; }
             .data-table { font-size: 1em; }
+            .discovery-report .dim-label { color: @window_fg_color; opacity: 0.85; }
+            .discovery-report columnview header,
+            .discovery-report columnview header button,
+            .discovery-report columnview header label { color: @view_fg_color; opacity: 1; }
             progressbar.score-good > trough > progress { background: @success_color; }
             progressbar.score-warn > trough > progress { background: @warning_color; }
             progressbar.score-poor > trough > progress { background: @error_color; }

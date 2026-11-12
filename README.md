@@ -42,6 +42,7 @@ Move from the site overview to the page that needs attention: filter the crawl, 
 | --- | --- |
 | Pages that need attention | HTTP status, indexability, titles, descriptions, canonical URLs, headings and image checks. |
 | Patterns across a site | Searchable results, duplicate and missing-metadata filters, and a summary of recurring issues. |
+| Sitemap coverage and discovery | XML indexes and gzip sitemaps, candidate orphan pages, sitemap response/indexability findings, source errors and coverage-aware CSV export. |
 | How pages connect | Inlinks, outlinks, internal-link opportunities and six views of site structure. |
 | More than a page title | Wrapping link tables with anchors and targets, image previews with resolution and alt text, social preview cards, JSON-LD diagnostics and extracted Markdown. |
 | Evidence you can use elsewhere | Filtered CSV export, spreadsheet-friendly copying, Markdown files and saved `.seocrawl` projects. |
@@ -66,7 +67,8 @@ Directory views can be weighted by URL count, page bytes, words, pages with issu
 1. **Choose your scope:** a website, a path, one page, or an explicit list of URLs.
 2. **Set your boundaries:** URL and depth limits, concurrency, include/exclude patterns, redirects and robots.txt handling.
 3. **Crawl and investigate:** search results, use the audit filters, inspect page details and open the visualizer.
-4. **Take the next step:** export filtered findings or save a project to reopen later.
+4. **Review sitemap discovery:** open **Sitemap & Discovery** to compare sitemap membership with observed internal-link reachability. Use **Manage sitemaps** to enable collection, add same-site sources, or apply source changes with a new crawl.
+5. **Take the next step:** export filtered findings or save a project to reopen later.
 
 The default crawl limit is 500 URLs and can be changed in Preferences. Optional JavaScript rendering requires a compatible Chrome/Chromium installation; it is not bundled. In Flatpak, that browser must be available inside the sandbox.
 
@@ -110,7 +112,9 @@ API credentials stay in memory for the session and must be entered again after r
 
 - SEO health is a local heuristic, not a Google score.
 - Schema diagnostics check syntax and selected fields; they do not certify rich-result eligibility.
-- Pages with no links from the seed cannot be discovered by following links. Supply known orphan URLs in List mode.
+- Sitemap declarations in robots.txt and manually configured same-site XML sources can reveal pages missed by link following. Sitemap-only page checks use the remaining crawl URL budget; unfetched URLs stay explicitly unevaluated.
+- Candidate orphan status means no observed linking path from the crawl start. Limits, scope restrictions and fetch failures can hide paths. List/URL mode does not establish site-wide reachability, and missing sitemap membership is a review opportunity.
+- Sitemap collection is bounded to 64 sources, five nested index levels, 50,000 unique URLs, 8 MiB per download and 50 MiB after gzip decoding. Source errors and truncation remain visible. Discovery evidence is saved in new `.seocrawl` projects; older projects need a new crawl.
 - Crawling sends requests to the websites you audit. Optional AI actions send selected page content to the chosen provider.
 
 For implementation details and current limitations, see the [developer guide](docs/DEVELOPMENT.md).

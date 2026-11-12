@@ -1572,6 +1572,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2248,11 +2257,12 @@ dependencies = [
 
 [[package]]
 name = "tadpole"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "cairo-rs",
  "csv",
  "ego-tree",
+ "flate2",
  "gdk4",
  "gio",
  "glib",
@@ -2261,6 +2271,7 @@ dependencies = [
  "libadwaita",
  "once_cell",
  "parking_lot",
+ "quick-xml",
  "regex",
  "reqwest",
  "scraper",

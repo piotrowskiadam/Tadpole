@@ -1,6 +1,6 @@
 [Setup]
 AppName=Tadpole
-AppVersion=0.4.2
+AppVersion=0.5.0
 DefaultDirName={autopf}\Tadpole
 DefaultGroupName=Tadpole
 UninstallDisplayIcon={app}\tadpole.exe
