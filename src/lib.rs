@@ -4,6 +4,7 @@ pub mod discovery;
 pub mod filters;
 mod http;
 pub mod inspection;
+pub mod issues;
 pub mod markdown;
 pub mod project;
 pub mod robots;
