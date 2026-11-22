@@ -212,16 +212,25 @@ impl DuplicateIndex {
             }
         }
     }
-    pub fn matches(&self, filter: CrawlFilter, result: &CrawlResult) -> bool {
+    pub fn count(&self, filter: CrawlFilter, result: &CrawlResult) -> usize {
         let (map, value) = match filter {
             CrawlFilter::TitleDuplicate => (&self.titles, &result.title),
             CrawlFilter::DescDuplicate => (&self.descriptions, &result.meta_desc),
             CrawlFilter::H1Duplicate => (&self.headings, &result.h1),
-            _ => return filter.matches(result, &[]),
+            _ => return 0,
         };
         value
             .as_ref()
             .and_then(|v| map.get(v))
-            .is_some_and(|count| *count > 1)
+            .copied()
+            .unwrap_or(0)
+    }
+    pub fn matches(&self, filter: CrawlFilter, result: &CrawlResult) -> bool {
+        match filter {
+            CrawlFilter::TitleDuplicate
+            | CrawlFilter::DescDuplicate
+            | CrawlFilter::H1Duplicate => self.count(filter, result) > 1,
+            _ => filter.matches(result, &[]),
+        }
     }
 }
