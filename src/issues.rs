@@ -689,25 +689,8 @@ impl IssueReport {
     }
 
     pub fn severity_summaries(&self) -> [SeveritySummary; 4] {
-        Severity::ALL.map(|severity| {
-            let mut active_issues = 0usize;
-            let mut unique_urls: BTreeSet<&str> = BTreeSet::new();
-            for issue in &self.issues {
-                if issue.severity == severity && issue.is_active() {
-                    active_issues += 1;
-                    for affected in &issue.affected_urls {
-                        unique_urls.insert(affected.url.as_str());
-                    }
-                }
-            }
-            let unique_affected_urls = unique_urls.len();
-            SeveritySummary {
-                severity,
-                active_issues,
-                unique_affected_urls,
-                affected_percentage: percentage_of_crawled(unique_affected_urls, self.crawled_urls),
-            }
-        })
+        let issues: Vec<&Issue> = self.issues.iter().collect();
+        summarize_severities(&issues, self.crawled_urls)
     }
 
     pub fn filter_issues(
@@ -1283,26 +1266,14 @@ fn render_markdown_document(
         "| Severity | Active Issues | Affected URLs | % of Crawled URLs |"
     );
     let _ = writeln!(out, "| --- | ---: | ---: | ---: |");
-    for severity in Severity::ALL {
-        let mut active_count = 0usize;
-        let mut unique_urls: BTreeSet<&str> = BTreeSet::new();
-        for issue in issues {
-            if issue.severity == severity && issue.is_active() {
-                active_count += 1;
-                for affected in &issue.affected_urls {
-                    unique_urls.insert(affected.url.as_str());
-                }
-            }
-        }
-        let affected_count = unique_urls.len();
-        let pct = percentage_of_crawled(affected_count, report.crawled_urls);
+    for summary in summarize_severities(issues, report.crawled_urls) {
         let _ = writeln!(
             out,
             "| {} | {} | {} | {:.1}% |",
-            severity.label(),
-            active_count,
-            affected_count,
-            pct
+            summary.severity.label(),
+            summary.active_issues,
+            summary.unique_affected_urls,
+            summary.affected_percentage
         );
     }
     out.push('\n');
@@ -1377,6 +1348,28 @@ fn write_markdown_issue_section(out: &mut String, issue: &Issue) {
             remaining
         );
     }
+}
+
+fn summarize_severities(issues: &[&Issue], crawled_urls: usize) -> [SeveritySummary; 4] {
+    Severity::ALL.map(|severity| {
+        let mut active_issues = 0usize;
+        let mut unique_urls: BTreeSet<&str> = BTreeSet::new();
+        for issue in issues {
+            if issue.severity == severity && issue.is_active() {
+                active_issues += 1;
+                for affected in &issue.affected_urls {
+                    unique_urls.insert(affected.url.as_str());
+                }
+            }
+        }
+        let unique_affected_urls = unique_urls.len();
+        SeveritySummary {
+            severity,
+            active_issues,
+            unique_affected_urls,
+            affected_percentage: percentage_of_crawled(unique_affected_urls, crawled_urls),
+        }
+    })
 }
 
 fn percentage_of_crawled(count: usize, crawled_urls: usize) -> f64 {

@@ -556,29 +556,30 @@ impl MainWindow {
         self.status_label.set_text(message);
     }
 
+    fn project_open_context(&self) -> ProjectOpenContext {
+        ProjectOpenContext {
+            window: self.window.clone(),
+            state: self.state.clone(),
+            ui_busy: self.ui_busy.clone(),
+            ui_crawl_active: self.ui_crawl_active.clone(),
+            start_button: self.start_button.clone(),
+            address_entry: self.address_entry.clone(),
+            table: self.table.clone(),
+            details: self.details.clone(),
+            sidebar: self.sidebar.clone(),
+            summary_panel: self.summary_panel.clone(),
+            mode_dropdown: self.mode_dropdown.clone(),
+            edit_list_button: self.edit_list_button.clone(),
+            loaded_list_urls: self.loaded_list_urls.clone(),
+            link_opportunities: self.link_opportunities.clone(),
+            discovery: self.discovery.clone(),
+            issues: self.issues.clone(),
+            status_label: self.status_label.clone(),
+        }
+    }
+
     pub fn open_project_path(&self, path: std::path::PathBuf) {
-        open_project_with_guard(
-            path,
-            ProjectOpenContext {
-                window: self.window.clone(),
-                state: self.state.clone(),
-                ui_busy: self.ui_busy.clone(),
-                ui_crawl_active: self.ui_crawl_active.clone(),
-                start_button: self.start_button.clone(),
-                address_entry: self.address_entry.clone(),
-                table: self.table.clone(),
-                details: self.details.clone(),
-                sidebar: self.sidebar.clone(),
-                summary_panel: self.summary_panel.clone(),
-                mode_dropdown: self.mode_dropdown.clone(),
-                edit_list_button: self.edit_list_button.clone(),
-                loaded_list_urls: self.loaded_list_urls.clone(),
-                link_opportunities: self.link_opportunities.clone(),
-                discovery: self.discovery.clone(),
-                issues: self.issues.clone(),
-                status_label: self.status_label.clone(),
-            },
-        );
+        open_project_with_guard(path, self.project_open_context());
     }
 
     /// Explicit fixture setup for the isolated preview example. Uses the real
@@ -1693,29 +1694,15 @@ impl MainWindow {
         });
 
         // Open project click
-        let state_open = state.clone();
-        let parent_win_open = main_window_widget.clone();
-        let address_entry_open = address_entry.clone();
-        let table_open = table.clone();
-        let details_open = details.clone();
-        let sidebar_open = sidebar.clone();
-        let summary_panel_open = summary_panel.clone();
-        let mode_dropdown_open = mode_dropdown.clone();
-        let edit_list_button_open = edit_list_button.clone();
-        let loaded_list_urls_open = loaded_list_urls.clone();
-        let link_opps_open = link_opps.clone();
-        let discovery_open = discovery.clone();
-        let issues_open = issues.clone();
-        let status_label_open = status_label.clone();
-        let busy_open = ui_busy.clone();
-        let crawl_active_open = ui_crawl_active.clone();
-        let start_open = start_button.clone();
+        let open_ctx = self.project_open_context();
         open_button.connect_clicked(move |_| {
-            if busy_open.get() {
+            if open_ctx.ui_busy.get() {
                 return;
             }
-            if crawl_active_open.get() || state_open.is_crawling() {
-                status_label_open.set_text("Stop the current crawl before opening a project.");
+            if open_ctx.ui_crawl_active.get() || open_ctx.state.is_crawling() {
+                open_ctx
+                    .status_label
+                    .set_text("Stop the current crawl before opening a project.");
                 return;
             }
             let dialog = gtk::FileDialog::new();
@@ -1730,30 +1717,11 @@ impl MainWindow {
             dialog.set_filters(Some(&filters));
             dialog.set_default_filter(Some(&filter));
 
-            let open_ctx = ProjectOpenContext {
-                window: parent_win_open.clone(),
-                state: state_open.clone(),
-                ui_busy: busy_open.clone(),
-                ui_crawl_active: crawl_active_open.clone(),
-                start_button: start_open.clone(),
-                address_entry: address_entry_open.clone(),
-                table: table_open.clone(),
-                details: details_open.clone(),
-                sidebar: sidebar_open.clone(),
-                summary_panel: summary_panel_open.clone(),
-                mode_dropdown: mode_dropdown_open.clone(),
-                edit_list_button: edit_list_button_open.clone(),
-                loaded_list_urls: loaded_list_urls_open.clone(),
-                link_opportunities: link_opps_open.clone(),
-                discovery: discovery_open.clone(),
-                issues: issues_open.clone(),
-                status_label: status_label_open.clone(),
-            };
-
-            dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
+            let open_ctx_for_dialog = open_ctx.clone();
+            dialog.open(Some(&open_ctx.window), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
-                        open_project_with_guard(path, open_ctx.clone());
+                        open_project_with_guard(path, open_ctx_for_dialog.clone());
                     }
                 }
             });
