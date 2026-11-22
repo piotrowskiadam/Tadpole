@@ -6,6 +6,7 @@
 /appimagetool
 .env
 .env.*
+*.tadpole
 *.seocrawl
 
 # Local developer media output
