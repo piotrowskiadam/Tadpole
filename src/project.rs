@@ -13,10 +13,13 @@ pub const SAVE_FILTER_PATTERNS: &[&str] = &["*.tadpole"];
 pub const OPEN_FILTER_PATTERNS: &[&str] = &["*.tadpole", "*.seocrawl"];
 
 pub fn ensure_project_save_path(path: &Path) -> PathBuf {
-    if path.extension().is_none() {
-        path.with_extension(PROJECT_EXTENSION)
-    } else {
+    if is_supported_project_path(path) {
         path.to_path_buf()
+    } else {
+        let mut raw = path.as_os_str().to_os_string();
+        raw.push(".");
+        raw.push(PROJECT_EXTENSION);
+        PathBuf::from(raw)
     }
 }
 

@@ -25,4 +25,7 @@ if ($proc.ExitCode -ne 0) {
 }
 
 Write-Host "=== Windows Build Successfully Completed! ===" -ForegroundColor Green
-Write-Host "Output package is located at: dist/tadpole-windows.zip" -ForegroundColor Cyan
+Write-Host "Portable archive: dist/tadpole-windows.zip" -ForegroundColor Cyan
+if (Test-Path "dist/TadpoleSetup.exe") {
+    Write-Host "Windows installer: dist/TadpoleSetup.exe" -ForegroundColor Cyan
+}
