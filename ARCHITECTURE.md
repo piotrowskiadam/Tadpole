@@ -12,8 +12,7 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 | `src/robots.rs` | Robots groups, agent specificity, longest-match Allow/Disallow and global sitemap declarations |
 | `src/sitemap.rs` | Bounded same-site XML/index/gzip ingestion with source provenance and failures |
 | `src/discovery.rs` | Reachability, sitemap reconciliation, coverage, project snapshot and CSV export |
-| `src/issues.rs` | GTK-independent unified Issues engine: 4-tier Severity grouping, 2xx-indexable gating, scope caveats, Rationale, Suggested Actions and per-URL Evidence |
-| `src/issues_export.rs` | Pure Markdown (25-URL inline sample cap) and uncapped CSV exporters for full audits and single Issues |
+| `src/issues.rs` | GTK-independent unified Issues engine and pure exporters: 4-tier Severity grouping, 2xx-indexable gating, scope caveats, Rationale, Suggested Actions, per-URL Evidence, Markdown (25-URL inline sample cap) and uncapped CSV exports |
 | `src/ui/discovery.rs` | Native Sitemap & Discovery report, sources, filters and selected evidence |
 | `src/ui/issues.rs` | Native GNOME/Libadwaita `Issues` workspace, Severity summary, filters, detail pane, exports and cross-tab navigation |
 | `src/http.rs` | Response allocation limits, independent of Content-Length |
@@ -75,4 +74,4 @@ The main notebook contains the complete **Crawl Results** workspace, **Issues**,
 
 `src/issues.rs` evaluates crawl observations and optional Sitemap & Discovery snapshots into grouped Issues across four fixed Severity tiers (`Critical`, `High`, `Medium`, `Low`), reporting transparent Severity counts and Affected URL percentages rather than a weighted 0–100 score (ADR-0001). Content, metadata, social, and structured-data rules are gated on 2xx indexable HTML pages so broken, redirected, or noindexed URLs do not create noisy lower-severity Issues. Scope caveats (stopped crawl, URL-limit cap, disabled or missing sitemaps) stay attached to the evaluated report.
 
-`src/issues_export.rs` formats deterministic Markdown (with scope caveats, Severity summary, Rationale, Suggested Action, and a 25-URL inline sample cap) and uncapped CSV (`severity`, `issue`, `url`, `evidence`, `suggested_action`, `source`) for either the full audit or a single selected Issue. `src/ui/issues.rs` recomputes lazily (throttled) only when the `Issues` tab is visible during live crawls, and always recomputes on crawl completion and Project load.
+`src/issues.rs` also formats deterministic Markdown (with scope caveats, Severity summary, Rationale, Suggested Action, and a 25-URL inline sample cap) and uncapped CSV (`severity`, `issue`, `url`, `evidence`, `suggested_action`, `source`, `scope_caveats`) for either the full audit or a single selected Issue. `src/ui/issues.rs` recomputes lazily (throttled) only when the `Issues` tab is visible during live crawls, and always recomputes on crawl completion and Project load.

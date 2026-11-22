@@ -467,14 +467,14 @@ impl IssuesPanel {
             "Affected URL",
             360,
             true,
-            0,
+            AffectedColumn::Url,
             affected_data.clone(),
         ));
         affected_table.append_column(&affected_column(
             "Evidence",
             380,
             true,
-            1,
+            AffectedColumn::Evidence,
             affected_data.clone(),
         ));
 
@@ -770,10 +770,8 @@ impl IssuesPanel {
         self.empty_page.set_visible(!has_data);
         self.split.set_visible(has_data);
 
-        let has_active = report.active_issue_counts.total() > 0;
         self.copy_all_btn.set_sensitive(has_data);
         self.export_all_btn.set_sensitive(has_data);
-        let _ = has_active;
 
         if has_data {
             self.scope_label.set_text(&format!(
@@ -1023,22 +1021,27 @@ impl IssuesPanel {
 
     fn export_all_markdown(self: &Rc<Self>) {
         let markdown = issues::export_markdown(&self.report.borrow());
-        self.save_text_file(
+        self.save_export_file(
             "Export All Issues (Markdown)",
             "tadpole-issues.md",
             "Markdown Files",
             "*.md",
-            markdown,
+            move |path| std::fs::write(path, markdown).map_err(|e| e.to_string()),
             "Exported all active Issues as Markdown.",
         );
     }
 
     fn export_all_csv(self: &Rc<Self>) {
         let report = self.report.borrow().clone();
-        self.save_csv_file(
+        self.save_export_file(
             "Export All Issues (CSV)",
             "tadpole-issues.csv",
-            move |file| issues::write_csv(file, &report).map_err(|e| e.to_string()),
+            "CSV Files",
+            "*.csv",
+            move |path| {
+                let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+                issues::write_csv(file, &report).map_err(|e| e.to_string())
+            },
             "Exported all active Issues as CSV.",
         );
     }
@@ -1055,12 +1058,12 @@ impl IssuesPanel {
         let initial_name = format!("tadpole-issue-{}.md", kind.slug());
         let toast_msg = format!("Exported \"{}\" as Markdown.", issue.name);
         drop(report);
-        self.save_text_file(
+        self.save_export_file(
             "Export Issue (Markdown)",
             &initial_name,
             "Markdown Files",
             "*.md",
-            markdown,
+            move |path| std::fs::write(path, markdown).map_err(|e| e.to_string()),
             &toast_msg,
         );
     }
@@ -1075,21 +1078,26 @@ impl IssuesPanel {
         };
         let initial_name = format!("tadpole-issue-{}.csv", kind.slug());
         let toast_msg = format!("Exported \"{}\" as CSV.", issue.name);
-        self.save_csv_file(
+        self.save_export_file(
             "Export Issue (CSV)",
             &initial_name,
-            move |file| issues::write_issue_csv(file, &report, &issue).map_err(|e| e.to_string()),
+            "CSV Files",
+            "*.csv",
+            move |path| {
+                let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+                issues::write_issue_csv(file, &report, &issue).map_err(|e| e.to_string())
+            },
             &toast_msg,
         );
     }
 
-    fn save_text_file(
+    fn save_export_file(
         self: &Rc<Self>,
         title: &str,
         initial_name: &str,
         filter_name: &str,
         pattern: &str,
-        content: String,
+        write_fn: impl FnOnce(std::path::PathBuf) -> Result<(), String> + Send + 'static,
         success_message: &str,
     ) {
         let parent = self.overlay.root().and_downcast::<gtk::Window>();
@@ -1103,52 +1111,7 @@ impl IssuesPanel {
         let filters = gio::ListStore::new::<gtk::FileFilter>();
         filters.append(&filter);
         dialog.set_filters(Some(&filters));
-
-        let panel = Rc::downgrade(self);
-        let success_message = success_message.to_string();
-        dialog.save(parent.as_ref(), None::<&gio::Cancellable>, move |result| {
-            let (Some(panel), Ok(file)) = (panel.upgrade(), result) else {
-                return;
-            };
-            let Some(path) = file.path() else {
-                panel.show_toast("Choose a local file for this export.");
-                return;
-            };
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            std::thread::spawn(move || {
-                let write_res = std::fs::write(path, content).map_err(|e| e.to_string());
-                let _ = tx.send(write_res);
-            });
-            glib::MainContext::default().spawn_local(async move {
-                match rx.await {
-                    Ok(Ok(())) => panel.show_toast(&success_message),
-                    Ok(Err(error)) => {
-                        panel.show_toast(&format!("Export failed: {error}"));
-                    }
-                    Err(_) => panel.show_toast("Export could not finish. Retry the export."),
-                }
-            });
-        });
-    }
-
-    fn save_csv_file(
-        self: &Rc<Self>,
-        title: &str,
-        initial_name: &str,
-        write_fn: impl FnOnce(std::fs::File) -> Result<(), String> + Send + 'static,
-        success_message: &str,
-    ) {
-        let parent = self.overlay.root().and_downcast::<gtk::Window>();
-        let dialog = gtk::FileDialog::builder()
-            .title(title)
-            .initial_name(initial_name)
-            .build();
-        let filter = gtk::FileFilter::new();
-        filter.set_name(Some("CSV Files"));
-        filter.add_pattern("*.csv");
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        filters.append(&filter);
-        dialog.set_filters(Some(&filters));
+        dialog.set_default_filter(Some(&filter));
 
         let panel = Rc::downgrade(self);
         let success_message = success_message.to_string();
@@ -1166,10 +1129,7 @@ impl IssuesPanel {
             };
             let (tx, rx) = tokio::sync::oneshot::channel();
             std::thread::spawn(move || {
-                let write_res = std::fs::File::create(path)
-                    .map_err(|e| e.to_string())
-                    .and_then(write_fn);
-                let _ = tx.send(write_res);
+                let _ = tx.send(write_fn(path));
             });
             glib::MainContext::default().spawn_local(async move {
                 match rx.await {
@@ -1235,11 +1195,17 @@ fn build_issue_row(issue: &Issue) -> gtk::Box {
     row
 }
 
+#[derive(Clone, Copy)]
+enum AffectedColumn {
+    Url,
+    Evidence,
+}
+
 fn affected_column(
     title: &str,
     width: i32,
     expand: bool,
-    kind: usize,
+    column_kind: AffectedColumn,
     data: AffectedData,
 ) -> gtk::ColumnViewColumn {
     let factory = gtk::SignalListItemFactory::new();
@@ -1269,10 +1235,9 @@ fn affected_column(
             let Some(row) = rows.get(id) else {
                 return;
             };
-            let value = if kind == 0 {
-                row.url.as_str()
-            } else {
-                row.evidence.as_str()
+            let value = match column_kind {
+                AffectedColumn::Url => row.url.as_str(),
+                AffectedColumn::Evidence => row.evidence.as_str(),
             };
             let text = item.child().and_downcast::<gtk::Label>().unwrap();
             text.set_text(value);
@@ -1293,13 +1258,10 @@ fn affected_column(
                 .and_then(|id| rows.get(id))
         };
         let ordering = match (get(a), get(b)) {
-            (Some(a), Some(b)) => {
-                if kind == 0 {
-                    a.url.cmp(&b.url)
-                } else {
-                    a.evidence.cmp(&b.evidence)
-                }
-            }
+            (Some(a), Some(b)) => match column_kind {
+                AffectedColumn::Url => a.url.cmp(&b.url),
+                AffectedColumn::Evidence => a.evidence.cmp(&b.evidence),
+            },
             _ => std::cmp::Ordering::Equal,
         };
         match ordering {
