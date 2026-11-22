@@ -13,7 +13,9 @@ Tadpole is an SEO crawler and site-auditing tool. Its owner is an experienced SE
 ## Capabilities and constraints
 
 - Crawl websites and inspect pages in a dense results table, filters, detail panels and summary dashboard.
-- Reconcile sitemap declarations with observed link reachability in the native Sitemap & Discovery report, inspect coverage and overlapping findings, export filtered CSV, and save discovery evidence in projects. Candidate orphan findings describe the collected crawl; an explicit action can analyze reachable, indexable linking sources for a selected target.
+- Triage crawl and sitemap findings in a dedicated `Issues` workspace powered by a unified core engine across four fixed Severity tiers (`Critical`, `High`, `Medium`, `Low`), reporting transparent Severity counts and Affected URL percentages instead of an arbitrary 0–100 site health score (per ADR-0001), with developer-ready Markdown (including clipboard copy) and uncapped CSV exports.
+- Reconcile sitemap declarations with observed link reachability in the native Sitemap & Discovery report, inspect coverage and overlapping findings, export filtered CSV, and save discovery Evidence in Projects. Candidate orphan findings describe the collected crawl; an explicit action can analyze reachable, indexable linking sources for a selected target.
+- Save new Projects as `.tadpole` files with OS file associations and direct double-click/CLI open, while keeping legacy `.seocrawl` Projects readable (per ADR-0002).
 - Explore directory structure, internal linking and rank with the site's visualization workspace.
 - Optional page-level AI suggestions use explicitly initiated provider requests and owner-supplied credentials.
 - SEO Studio was removed at the owner's request. Future DataForSEO features require a specific brief.

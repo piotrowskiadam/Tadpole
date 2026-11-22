@@ -12,8 +12,25 @@ pub const PROJECT_MIME_TYPE: &str = "application/x-tadpole-project";
 pub const SAVE_FILTER_PATTERNS: &[&str] = &["*.tadpole"];
 pub const OPEN_FILTER_PATTERNS: &[&str] = &["*.tadpole", "*.seocrawl"];
 
+pub fn is_document_portal_path(path: &Path) -> bool {
+    let mut components = path.components();
+    matches!(components.next(), Some(std::path::Component::RootDir))
+        && components.next().and_then(|c| c.as_os_str().to_str()) == Some("run")
+        && components.next().and_then(|c| c.as_os_str().to_str()) == Some("user")
+        && components
+            .next()
+            .and_then(|c| c.as_os_str().to_str())
+            .is_some_and(|uid| !uid.is_empty() && uid.bytes().all(|b| b.is_ascii_digit()))
+        && components.next().and_then(|c| c.as_os_str().to_str()) == Some("doc")
+        && components
+            .next()
+            .and_then(|c| c.as_os_str().to_str())
+            .is_some_and(|doc_id| !doc_id.is_empty())
+        && components.next().is_some()
+}
+
 pub fn ensure_project_save_path(path: &Path) -> PathBuf {
-    if is_supported_project_path(path) {
+    if is_supported_project_path(path) || is_document_portal_path(path) {
         path.to_path_buf()
     } else {
         let mut raw = path.as_os_str().to_os_string();
@@ -64,20 +81,35 @@ pub fn save(
     path: &Path,
     project: &CrawlProject,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use io::Write;
+
     let directory = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
-    {
-        let mut writer = io::BufWriter::new(temporary.as_file_mut());
-        serde_json::to_writer(&mut writer, project)?;
-        use io::Write;
-        writer.flush()?;
+    match tempfile::NamedTempFile::new_in(directory) {
+        Ok(mut temporary) => {
+            {
+                let mut writer = io::BufWriter::new(temporary.as_file_mut());
+                serde_json::to_writer(&mut writer, project)?;
+                writer.flush()?;
+            }
+            temporary.as_file().sync_all()?;
+            temporary.persist(path)?;
+            Ok(())
+        }
+        Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
+            // Single-file sandbox/portal mounts (such as xdg-document-portal) may deny sibling
+            // temp files while granting write access to the chosen target file itself.
+            // Serialize in memory first so serialization failures never truncate the target.
+            let bytes = serde_json::to_vec(project)?;
+            let mut file = std::fs::File::create(path)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            Ok(())
+        }
+        Err(err) => Err(err.into()),
     }
-    temporary.as_file().sync_all()?;
-    temporary.persist(path)?;
-    Ok(())
 }
 
 pub fn load(path: &Path) -> Result<CrawlProject, Box<dyn std::error::Error + Send + Sync>> {

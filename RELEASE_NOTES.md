@@ -1,5 +1,16 @@
 # Tadpole releases
 
+## 0.6.0 — Prioritized Issues, `.tadpole` Projects, and Platform Hardening
+
+- **Dedicated `Issues` workspace:** triage crawl and Sitemap & Discovery findings together in a native GNOME/Libadwaita tab, grouped into named Issues across four fixed Severity tiers (**Critical**, **High**, **Medium**, **Low**).
+- **Transparent audit summary (no arbitrary 0–100 health score):** review exact Severity counts, Affected URL percentages, explicit scope-honesty caveats (stopped crawls, URL-capped runs, or disabled/missing sitemaps), per-Issue Rationale, Suggested Actions, and per-URL Evidence.
+- **2xx-indexable content gating:** content, metadata, social, and structured-data Issues evaluate only on 2xx indexable HTML pages so 4xx, 5xx, 3xx, and noindexed URLs do not pollute lower-severity counts.
+- **Developer-ready exports & cross-tab navigation:** export full-audit or single-Issue reports to Markdown (with a 25-URL inline sample cap and one-click clipboard copy) or uncapped CSV, and jump directly from any Affected URL into **Crawl Results** or **Sitemap & Discovery**.
+- **`.tadpole` Project branding & direct open:** save new Projects as `.tadpole` files with Linux MIME/desktop and Windows installer file associations, open Projects directly via OS double-click or CLI arguments (with active-crawl/replacement guards), and continue opening legacy `.seocrawl` Projects seamlessly.
+- **Platform hardening:** Windows packaging audit and reserved-filename hardening with a clean-machine [Windows validation checklist](https://github.com/piotrowskiadam/Tadpole/blob/main/docs/WINDOWS_VALIDATION.md), Flatpak document-portal save hardening and [sandbox smoke-test checklist](https://github.com/piotrowskiadam/Tadpole/blob/main/docs/FLATHUB_READINESS.md), and refreshed Snap Store metadata.
+
+Existing `.seocrawl` Projects remain readable via the Open dialog and CLI. New saves default to `.tadpole`. Severity tiers express contextual audit guidance for prioritization rather than a guaranteed traffic or ranking impact.
+
 ## 0.5.0 — Sitemap & Discovery
 
 - Collect XML sitemap URL sets, indexes and gzip files from robots.txt or manual same-site sources, with bounded downloads and visible source errors.
