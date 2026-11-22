@@ -69,3 +69,7 @@ required-features = ["desktop"]
 [[example]]
 name = "discovery_preview"
 required-features = ["desktop"]
+
+[[example]]
+name = "issues_preview"
+required-features = ["desktop"]

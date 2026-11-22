@@ -68,6 +68,42 @@ impl IssueSource {
     }
 }
 
+/// Target workspace tab when jumping from an Affected URL in the `Issues` tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JumpDestination {
+    CrawlResults,
+    SitemapDiscovery,
+}
+
+/// Resolve whether activating an Affected URL should navigate to Crawl Results or
+/// Sitemap & Discovery based on the Issue source and available evidence.
+pub fn jump_destination(
+    source: IssueSource,
+    in_crawl_results: bool,
+    in_discovery: bool,
+) -> JumpDestination {
+    match source {
+        IssueSource::Discovery => {
+            if in_discovery {
+                JumpDestination::SitemapDiscovery
+            } else if in_crawl_results {
+                JumpDestination::CrawlResults
+            } else {
+                JumpDestination::SitemapDiscovery
+            }
+        }
+        IssueSource::Crawl => {
+            if in_crawl_results {
+                JumpDestination::CrawlResults
+            } else if in_discovery {
+                JumpDestination::SitemapDiscovery
+            } else {
+                JumpDestination::CrawlResults
+            }
+        }
+    }
+}
+
 /// Canonical catalog of all unified crawl and Sitemap & Discovery Issues,
 /// ordered by Severity tier (`Critical` -> `High` -> `Medium` -> `Low`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -532,6 +568,36 @@ impl Issue {
     pub fn is_active(&self) -> bool {
         self.affected_count > 0
     }
+
+    pub fn matches_query(&self, query: &str) -> bool {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return true;
+        }
+        self.name.to_lowercase().contains(&q)
+            || self.severity.label().to_lowercase().contains(&q)
+            || self.source.label().to_lowercase().contains(&q)
+            || self.rationale.to_lowercase().contains(&q)
+            || self.suggested_action.to_lowercase().contains(&q)
+            || self.affected_urls.iter().any(|affected| {
+                affected.url.to_lowercase().contains(&q)
+                    || affected.evidence.to_lowercase().contains(&q)
+            })
+    }
+
+    pub fn filter_affected_urls(&self, query: &str) -> Vec<&AffectedUrl> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return self.affected_urls.iter().collect();
+        }
+        self.affected_urls
+            .iter()
+            .filter(|affected| {
+                affected.url.to_lowercase().contains(&q)
+                    || affected.evidence.to_lowercase().contains(&q)
+            })
+            .collect()
+    }
 }
 
 /// Transparent per-Severity counts (no arbitrary 0–100 health score per ADR-0001).
@@ -595,6 +661,16 @@ pub struct IssueReport {
     pub issues: Vec<Issue>,
 }
 
+/// Transparent per-Severity summary combining active Issue counts with unique
+/// Affected URL counts and percentages (no arbitrary 0–100 health score per ADR-0001).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SeveritySummary {
+    pub severity: Severity,
+    pub active_issues: usize,
+    pub unique_affected_urls: usize,
+    pub affected_percentage: f64,
+}
+
 impl IssueReport {
     pub fn active_issues(&self) -> impl Iterator<Item = &Issue> {
         self.issues.iter().filter(|issue| issue.is_active())
@@ -610,6 +686,42 @@ impl IssueReport {
 
     pub fn has_caveat(&self, kind: ScopeCaveatKind) -> bool {
         self.caveats.iter().any(|caveat| caveat.kind == kind)
+    }
+
+    pub fn severity_summaries(&self) -> [SeveritySummary; 4] {
+        Severity::ALL.map(|severity| {
+            let mut active_issues = 0usize;
+            let mut unique_urls: BTreeSet<&str> = BTreeSet::new();
+            for issue in &self.issues {
+                if issue.severity == severity && issue.is_active() {
+                    active_issues += 1;
+                    for affected in &issue.affected_urls {
+                        unique_urls.insert(affected.url.as_str());
+                    }
+                }
+            }
+            let unique_affected_urls = unique_urls.len();
+            SeveritySummary {
+                severity,
+                active_issues,
+                unique_affected_urls,
+                affected_percentage: percentage_of_crawled(unique_affected_urls, self.crawled_urls),
+            }
+        })
+    }
+
+    pub fn filter_issues(
+        &self,
+        severity: Option<Severity>,
+        show_passed: bool,
+        query: &str,
+    ) -> Vec<&Issue> {
+        self.issues
+            .iter()
+            .filter(|issue| show_passed || issue.is_active())
+            .filter(|issue| severity.is_none_or(|tier| issue.severity == tier))
+            .filter(|issue| issue.matches_query(query))
+            .collect()
     }
 }
 

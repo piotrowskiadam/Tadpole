@@ -46,6 +46,7 @@ pub struct DiscoveryPanel {
     data: Data,
     filter: Cell<usize>,
     model: gtk::StringList,
+    table: gtk::ColumnView,
     navigation: gtk::ListBox,
     selection: gtk::SingleSelection,
     search: gtk::SearchEntry,
@@ -238,6 +239,7 @@ impl DiscoveryPanel {
             data,
             filter: Cell::new(0),
             model,
+            table,
             navigation: navigation.clone(),
             selection: selection.clone(),
             search: search.clone(),
@@ -374,6 +376,52 @@ impl DiscoveryPanel {
         if let Some(index) = Finding::ALL.iter().position(|f| *f == finding) {
             self.navigation
                 .select_row(self.navigation.row_at_index(index as i32 + 1).as_ref());
+        }
+    }
+
+    pub fn select_url(&self, url: &str, preferred_finding: Option<Finding>) -> bool {
+        let target_id = {
+            let data = self.data.borrow();
+            let Some(snapshot) = data.as_ref() else {
+                return false;
+            };
+            snapshot.rows.iter().position(|row| row.url == url)
+        };
+        let Some(target_id) = target_id else {
+            return false;
+        };
+
+        if !self.search.text().is_empty() {
+            self.search.set_text("");
+        }
+
+        let use_finding = preferred_finding.filter(|finding| {
+            self.data
+                .borrow()
+                .as_ref()
+                .and_then(|s| s.rows.get(target_id))
+                .is_some_and(|row| row.findings.contains(finding))
+        });
+        if let Some(finding) = use_finding {
+            self.select_finding(finding);
+        } else {
+            self.navigation
+                .select_row(self.navigation.row_at_index(0).as_ref());
+        }
+
+        if let Some(pos) = self.visible_indices().iter().position(|i| *i == target_id) {
+            let pos = pos as u32;
+            self.selection.set_selected(pos);
+            self.table.scroll_to(
+                pos,
+                None,
+                gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
+                None,
+            );
+            self.show_selected();
+            true
+        } else {
+            false
         }
     }
 
