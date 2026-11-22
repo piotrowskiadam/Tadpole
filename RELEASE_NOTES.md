@@ -1,5 +1,11 @@
 # Tadpole releases
 
+## 0.6.1 — Crawl Results Table & Issues Navigation Fixes
+
+- **Resizable, wrapping Crawl Results columns:** set sensible default widths across all 8 Crawl Results columns, enable column resizing (`set_resizable(true)`) with visible column separators, and wrap long URLs, indexability labels, and titles (`WordChar` with full-text tooltips) so long addresses no longer push the rest of the table off-screen.
+- **Synced `Issues` → `Crawl Results` filter jump:** clicking **Open in Crawl Results** from an Issue now clears stale search queries and automatically selects the matching filter in **SEO Audit Filters** before highlighting and scrolling to the Affected URL.
+- **Stable window height & scrolling:** fix a GTK4 height-for-width layout bug where wrapping labels in hidden notebook tabs could push the bottom **Details** panel off-screen and disable scrolling in **SEO Audit Filters** after a crawl completed.
+
 ## 0.6.0 — Prioritized Issues, `.tadpole` Projects, and Platform Hardening
 
 - **Dedicated `Issues` workspace:** triage crawl and Sitemap & Discovery findings together in a native GNOME/Libadwaita tab, grouped into named Issues across four fixed Severity tiers (**Critical**, **High**, **Medium**, **Low**).

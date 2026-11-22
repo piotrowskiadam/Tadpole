@@ -17,6 +17,11 @@
     <mediatype>application/x-tadpole-project</mediatype>
   </provides>
   <releases>
+    <release version="0.6.1" date="2026-11-23">
+      <description>
+        <p>Make Crawl Results columns resizable with sensible default widths and word wrapping, sync Open in Crawl Results jumps from Issues to the matching SEO Audit Filter, and prevent wrapping labels in hidden tabs from expanding the window past the screen.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-22">
       <description>
         <p>Triage crawl and sitemap findings in a dedicated Issues workspace ranked across four Severity tiers, export developer-ready Markdown and CSV audit reports, and save or double-click .tadpole Projects while keeping legacy .seocrawl files readable.</p>
