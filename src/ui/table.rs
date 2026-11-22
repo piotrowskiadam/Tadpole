@@ -89,12 +89,12 @@ impl Table {
         // Setup selection
         let selection_model = gtk::SingleSelection::new(Some(sort_model));
         column_view.set_model(Some(&selection_model));
+        column_view.set_show_column_separators(true);
         column_view.add_css_class("data-table");
         scrolled_window.set_child(Some(&column_view));
 
         // Column 1: URL Address
-        let col_url = Self::create_text_column("Address", |res| res.url.clone());
-        col_url.set_expand(true);
+        let col_url = Self::create_text_column("Address", 380, true, |res| res.url.clone());
         let sort_url = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -114,7 +114,7 @@ impl Table {
         column_view.append_column(&col_url);
 
         // Column 2: Status Code
-        let col_status = Self::create_text_column("Status", |res| {
+        let col_status = Self::create_text_column("Status", 80, false, |res| {
             res.status_code.map_or("Err".to_string(), |c| c.to_string())
         });
         let sort_status = gtk::CustomSorter::new(|a, b| {
@@ -136,8 +136,9 @@ impl Table {
         column_view.append_column(&col_status);
 
         // Column 3: Indexability
-        let col_index =
-            Self::create_text_column("Indexability", |res| res.indexability_status.clone());
+        let col_index = Self::create_text_column("Indexability", 140, true, |res| {
+            res.indexability_status.clone()
+        });
         let sort_index = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -157,8 +158,9 @@ impl Table {
         column_view.append_column(&col_index);
 
         // Column 4: Title
-        let col_title =
-            Self::create_text_column("Title", |res| res.title.clone().unwrap_or_default());
+        let col_title = Self::create_text_column("Title", 320, true, |res| {
+            res.title.clone().unwrap_or_default()
+        });
         let sort_title = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -178,7 +180,8 @@ impl Table {
         column_view.append_column(&col_title);
 
         // Column 5: Word Count
-        let col_words = Self::create_text_column("Word Count", |res| res.word_count.to_string());
+        let col_words =
+            Self::create_text_column("Word Count", 105, false, |res| res.word_count.to_string());
         let sort_words = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -198,7 +201,7 @@ impl Table {
         column_view.append_column(&col_words);
 
         // Column 6: Size (Bytes)
-        let col_size = Self::create_text_column("Size (KB)", |res| {
+        let col_size = Self::create_text_column("Size (KB)", 95, false, |res| {
             format!("{:.2}", res.size_bytes as f64 / 1024.0)
         });
         let sort_size = gtk::CustomSorter::new(|a, b| {
@@ -220,7 +223,7 @@ impl Table {
         column_view.append_column(&col_size);
 
         // Column 7: Depth
-        let col_depth = Self::create_text_column("Depth", |res| res.depth_label());
+        let col_depth = Self::create_text_column("Depth", 80, false, |res| res.depth_label());
         let sort_depth = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -240,8 +243,9 @@ impl Table {
         column_view.append_column(&col_depth);
 
         // Column 8: Response Time (ms)
-        let col_time =
-            Self::create_text_column("Response Time (ms)", |res| res.response_time_ms.to_string());
+        let col_time = Self::create_text_column("Response Time (ms)", 145, false, |res| {
+            res.response_time_ms.to_string()
+        });
         let sort_time = gtk::CustomSorter::new(|a, b| {
             let a_val = a
                 .downcast_ref::<CrawlRowData>()
@@ -698,17 +702,28 @@ impl Table {
         });
     }
 
-    fn create_text_column<F>(title: &str, select_fn: F) -> gtk::ColumnViewColumn
+    fn create_text_column<F>(
+        title: &str,
+        default_width: i32,
+        wrap: bool,
+        select_fn: F,
+    ) -> gtk::ColumnViewColumn
     where
         F: Fn(&CrawlResult) -> String + 'static,
     {
         let factory = gtk::SignalListItemFactory::new();
 
-        factory.connect_setup(|_, obj| {
+        factory.connect_setup(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let label = gtk::Label::new(None);
-            label.set_halign(gtk::Align::Start);
+            label.set_halign(gtk::Align::Fill);
+            label.set_xalign(0.0);
             label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            label.set_wrap(wrap);
+            if wrap {
+                label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+            }
             label.set_margin_start(10);
             label.set_margin_end(10);
             label.set_margin_top(6);
@@ -721,10 +736,19 @@ impl Table {
             let label = list_item.child().and_downcast::<gtk::Label>().unwrap();
             let row_data = list_item.item().and_downcast::<CrawlRowData>().unwrap();
             if let Some(res) = row_data.get_result() {
-                label.set_text(&select_fn(&res));
+                let text = select_fn(&res);
+                label.set_text(&text);
+                if wrap && !text.is_empty() {
+                    label.set_tooltip_text(Some(&text));
+                } else {
+                    label.set_tooltip_text(None);
+                }
             }
         });
 
-        gtk::ColumnViewColumn::new(Some(title), Some(factory))
+        let column = gtk::ColumnViewColumn::new(Some(title), Some(factory));
+        column.set_resizable(true);
+        column.set_fixed_width(default_width);
+        column
     }
 }
