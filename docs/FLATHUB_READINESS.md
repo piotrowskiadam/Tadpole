@@ -21,8 +21,27 @@ The identity change is **after** GitHub release 0.4.0. A Flathub submission must
 - JavaScript rendering launches an external Chrome/Chromium process. A browser installed on the host is not automatically available inside a Flatpak sandbox. Test a compatible sandbox-accessible browser or document a supported limitation; do not assume host Chrome is usable. The app now gives a sandbox-specific error if no browser is available. Never weaken the browser sandbox or grant host access without an explicit, reviewed design.
 - The file chooser, clipboard, launch/icon behavior, URLs, non-JavaScript crawl, optional AI action, project persistence and error paths need a real sandbox smoke test. Include a clean system and, if applicable, aarch64.
 - Flatpak builds on Flathub run without network access. A person should follow the official [flatpak-cargo-generator documentation](https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo) and Flathub's source rules when independently preparing the build inputs and human-authored manifest. The GNOME SDK and Flatpak Builder are present locally, but this does not establish that the matching Rust SDK extension or current Flathub runtime is installed or sufficient.
-- AppStream metadata must validate, accurately describe the optional paid AI requests, and include an appropriate content rating and release information. Follow the current [metadata guidelines](https://docs.flathub.org/docs/for-app-authors/metainfo-guidelines).
+- AppStream metadata (`flatpak/com.tadpole.seo.metainfo.xml`) and MIME metadata (`flatpak/com.tadpole.seo.mime.xml`) are validated offline with `appstreamcli validate --no-net` and `xmllint --noout`. Keep descriptions, optional paid AI disclosures, content ratings, and release notes aligned with [Flathub's metadata guidelines](https://docs.flathub.org/docs/for-app-authors/metainfo-guidelines).
+- Project save paths preserve exact XDG document-portal filenames (`/run/user/<uid>/doc/<id>/<file>`) and fall back to serialized direct writes if a single-file portal mount denies sibling temporary files.
 - Flathub requires at least one real, representative screenshot, available from an immutable public URL. The repository's older screenshot predates the current UI and should not be represented as an up-to-date capture. OBS Studio 33.0.1 is installed as a Flatpak on the development machine; a human can capture the updated window and review it for private data. The agent session did not have native-window capture access.
+
+## Sandbox smoke-test checklist
+
+Run this checklist inside an installed Flatpak sandbox (with no native Tadpole instance running) before any release or human-owned Flathub submission:
+
+- [ ] **Launch & identity**: Run `flatpak run com.tadpole.seo` (or the human-chosen Flathub ID), confirm the window icon and desktop entry appear properly, and confirm no host `--filesystem=home` or `--filesystem=host` override is needed.
+- [ ] **Crawl & `Issues` workspace**: Crawl a small site (for example 10–30 URLs), switch to the `Issues` tab, verify Severity counts (`Critical`, `High`, `Medium`, `Low`) and Affected URL percentages populate, and click an Affected URL to jump into **Crawl Results** or **Sitemap & Discovery**.
+- [ ] **Document-portal open/save (`.tadpole` and `.seocrawl`)**:
+  - [ ] Save a new `.tadpole` Project via the portal Save dialog (both accepting the default `project.tadpole` name and typing a custom name) and confirm the file is written cleanly on the host.
+  - [ ] Re-save over the existing `.tadpole` file through the portal and confirm it updates without permission errors or stray temporary files.
+  - [ ] Open both the saved `.tadpole` Project and a legacy `.seocrawl` Project via the portal Open dialog and confirm crawl results, settings, and discovery Evidence load cleanly.
+- [ ] **Portal exports (`Issues`, Crawl Results, Sitemap & Discovery)**:
+  - [ ] Export the full `Issues` report to Markdown and CSV via the FileChooser portal; verify both files appear at the chosen host paths with expected content.
+  - [ ] Export a single selected Issue to Markdown and CSV via the portal.
+  - [ ] Export Crawl Results CSV and Markdown folder (`select_folder`) through the portal and verify written files.
+- [ ] **Clipboard copy**: Click **Copy Markdown** in the `Issues` workspace (and copy rows from **Crawl Results**), then paste into a host text editor to confirm Wayland/X11 clipboard handoff works.
+- [ ] **Browser-missing sandbox message**: Enable JavaScript rendering in **Preferences** without a sandbox-accessible Chrome/Chromium, start a crawl, and confirm Tadpole surfaces the Flatpak-specific sandbox error message without crashing or attempting to weaken the sandbox.
+- [ ] **Light/dark UI & keyboard navigation**: Toggle the desktop appearance between light and dark styles and navigate tabs, filters, and the `Issues` list with keyboard focus.
 
 ## Human-owned submission
 

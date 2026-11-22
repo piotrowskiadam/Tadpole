@@ -171,3 +171,44 @@ fn saving_over_existing_tadpole_project_replaces_atomically_without_stray_temp_f
         .collect();
     assert_eq!(entries, vec![std::ffi::OsString::from("example.com.tadpole")]);
 }
+
+#[test]
+fn document_portal_save_paths_keep_exact_portal_filename() {
+    let portal_without_ext = Path::new("/run/user/1000/doc/1a2b3c4d/site-audit");
+    assert_eq!(
+        tadpole::project::ensure_project_save_path(portal_without_ext),
+        PathBuf::from("/run/user/1000/doc/1a2b3c4d/site-audit")
+    );
+    let portal_with_ext = Path::new("/run/user/1000/doc/1a2b3c4d/site-audit.tadpole");
+    assert_eq!(
+        tadpole::project::ensure_project_save_path(portal_with_ext),
+        PathBuf::from("/run/user/1000/doc/1a2b3c4d/site-audit.tadpole")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn save_falls_back_to_direct_write_when_parent_forbids_sibling_temp_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("portal.tadpole");
+    std::fs::write(&target, b"{}").unwrap();
+
+    // Lock the parent directory against sibling temp-file creation (like a single-file portal mount)
+    // while keeping the target file itself writable.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let state = CrawlState::new();
+    state.insert_result(sample_page("https://example.com/portal"));
+    let project = state.get_project("https://example.com/".into());
+    let save_result = tadpole::project::save(&target, &project);
+
+    // Restore permissions before asserting so tempdir cleanup always succeeds.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    save_result.expect("direct write fallback should succeed when target file is writable");
+    let loaded = tadpole::project::load(&target).unwrap();
+    assert_eq!(loaded.seed_url, "https://example.com/");
+    assert_eq!(loaded.results.len(), 1);
+}

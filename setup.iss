@@ -1,7 +1,7 @@
 [Setup]
 AppName=Tadpole
 ; Keep AppVersion aligned with Cargo.toml on each release bump.
-AppVersion=0.5.0
+AppVersion=0.6.0
 DefaultDirName={autopf}\Tadpole
 DefaultGroupName=Tadpole
 PrivilegesRequiredOverridesAllowed=dialog
