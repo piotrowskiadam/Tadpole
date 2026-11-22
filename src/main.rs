@@ -1,9 +1,29 @@
 #![windows_subsystem = "windows"]
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use tadpole::ui;
 
 use adw::prelude::*;
 use ui::window::MainWindow;
+
+fn ensure_window(
+    app: &adw::Application,
+    slot: &Rc<RefCell<Option<Rc<MainWindow>>>>,
+) -> Rc<MainWindow> {
+    if let Some(existing) = slot.borrow().as_ref() {
+        return existing.clone();
+    }
+    ui::theme::install();
+    let main_window = Rc::new(MainWindow::new(app));
+    let slot_on_destroy = slot.clone();
+    main_window.window().connect_destroy(move |_| {
+        *slot_on_destroy.borrow_mut() = None;
+    });
+    *slot.borrow_mut() = Some(main_window.clone());
+    main_window
+}
 
 fn main() {
     #[cfg(target_os = "windows")]
@@ -41,12 +61,28 @@ fn main() {
     };
     let app = adw::Application::builder()
         .application_id(tadpole::application_id(flatpak_id.as_deref()))
+        .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
 
-    app.connect_activate(|app| {
-        ui::theme::install();
-        let main_window = MainWindow::new(app);
+    let primary_window: Rc<RefCell<Option<Rc<MainWindow>>>> = Rc::new(RefCell::new(None));
+
+    let primary_window_activate = primary_window.clone();
+    app.connect_activate(move |app| {
+        let main_window = ensure_window(app, &primary_window_activate);
         main_window.present();
+    });
+
+    let primary_window_open = primary_window.clone();
+    app.connect_open(move |app, files, _hint| {
+        let main_window = ensure_window(app, &primary_window_open);
+        main_window.present();
+        let paths = files.iter().filter_map(|file| file.path());
+        if let Some(path) = tadpole::project::resolve_open_project_path(paths) {
+            main_window.open_project_path(path);
+        } else {
+            main_window
+                .show_status("Unsupported file type. Open a .tadpole or .seocrawl project.");
+        }
     });
 
     // 5. Run GTK application event loop (blocks until app exits)

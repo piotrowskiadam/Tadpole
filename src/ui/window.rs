@@ -50,6 +50,8 @@ pub struct MainWindow {
     mode_dropdown: gtk::DropDown,
     edit_list_button: gtk::Button,
     loaded_list_urls: Rc<RefCell<Vec<String>>>,
+    ui_busy: Rc<std::cell::Cell<bool>>,
+    ui_crawl_active: Rc<std::cell::Cell<bool>>,
 }
 
 impl MainWindow {
@@ -106,13 +108,13 @@ impl MainWindow {
 
         let open_button = gtk::Button::builder()
             .icon_name("document-open-symbolic")
-            .tooltip_text("Open SEO Crawl Project")
+            .tooltip_text("Open Project")
             .build();
         header_bar.pack_start(&open_button);
 
         let save_button = gtk::Button::builder()
             .icon_name("document-save-symbolic")
-            .tooltip_text("Save SEO Crawl Project")
+            .tooltip_text("Save Project")
             .build();
         header_bar.pack_start(&save_button);
 
@@ -438,6 +440,8 @@ impl MainWindow {
         status_bar.append(&status_label);
 
         let loaded_list_urls = Rc::new(RefCell::new(Vec::new()));
+        let ui_busy = Rc::new(std::cell::Cell::new(false));
+        let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
 
         let main_window = Self {
             window,
@@ -457,6 +461,8 @@ impl MainWindow {
             mode_dropdown,
             edit_list_button,
             loaded_list_urls,
+            ui_busy,
+            ui_crawl_active,
         };
 
         let config = main_window.state.get_config();
@@ -492,6 +498,34 @@ impl MainWindow {
 
     pub fn present(&self) {
         self.window.present();
+    }
+
+    pub fn show_status(&self, message: &str) {
+        self.status_label.set_text(message);
+    }
+
+    pub fn open_project_path(&self, path: std::path::PathBuf) {
+        open_project_with_guard(
+            path,
+            ProjectOpenContext {
+                window: self.window.clone(),
+                state: self.state.clone(),
+                ui_busy: self.ui_busy.clone(),
+                ui_crawl_active: self.ui_crawl_active.clone(),
+                start_button: self.start_button.clone(),
+                address_entry: self.address_entry.clone(),
+                table: self.table.clone(),
+                details: self.details.clone(),
+                sidebar: self.sidebar.clone(),
+                summary_panel: self.summary_panel.clone(),
+                mode_dropdown: self.mode_dropdown.clone(),
+                edit_list_button: self.edit_list_button.clone(),
+                loaded_list_urls: self.loaded_list_urls.clone(),
+                link_opportunities: self.link_opportunities.clone(),
+                discovery: self.discovery.clone(),
+                status_label: self.status_label.clone(),
+            },
+        );
     }
 
     /// Explicit fixture setup for the isolated preview example. Uses the real
@@ -557,8 +591,8 @@ impl MainWindow {
         filter_export_btn: gtk::Button,
     ) {
         let state = self.state.clone();
-        let ui_busy = Rc::new(std::cell::Cell::new(false));
-        let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
+        let ui_busy = self.ui_busy.clone();
+        let ui_crawl_active = self.ui_crawl_active.clone();
         let table = self.table.clone();
         let details = self.details.clone();
         let sidebar = self.sidebar.clone();
@@ -1540,11 +1574,13 @@ impl MainWindow {
         let status_save = status_label.clone();
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileDialog::new();
-            dialog.set_title("Save Crawl Project");
-            dialog.set_initial_name(Some("project.seocrawl"));
+            dialog.set_title("Save Project");
+            dialog.set_initial_name(Some(crate::project::DEFAULT_PROJECT_FILENAME));
             let filter = gtk::FileFilter::new();
-            filter.set_name(Some("SEO Crawl Files"));
-            filter.add_pattern("*.seocrawl");
+            filter.set_name(Some("Tadpole Projects"));
+            for pattern in crate::project::SAVE_FILTER_PATTERNS {
+                filter.add_pattern(pattern);
+            }
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
@@ -1558,7 +1594,8 @@ impl MainWindow {
                 None::<&gio::Cancellable>,
                 move |result| {
                     if let Ok(file) = result {
-                        if let Some(path) = file.path() {
+                        if let Some(raw_path) = file.path() {
+                            let path = crate::project::ensure_project_save_path(&raw_path);
                             if let Some(parent) = path.parent() {
                                 let mut config = state_inner.get_config();
                                 config.project_dir = Some(parent.to_string_lossy().to_string());
@@ -1601,6 +1638,7 @@ impl MainWindow {
         let parent_win_open = main_window_widget.clone();
         let address_entry_open = address_entry.clone();
         let table_open = table.clone();
+        let details_open = details.clone();
         let sidebar_open = sidebar.clone();
         let summary_panel_open = summary_panel.clone();
         let mode_dropdown_open = mode_dropdown.clone();
@@ -1613,106 +1651,47 @@ impl MainWindow {
         let crawl_active_open = ui_crawl_active.clone();
         let start_open = start_button.clone();
         open_button.connect_clicked(move |_| {
-            if busy_open.get() || crawl_active_open.get() { return; }
-            if state_open.is_crawling() { status_label_open.set_text("Stop the current crawl before opening a project."); return; }
+            if busy_open.get() {
+                return;
+            }
+            if crawl_active_open.get() || state_open.is_crawling() {
+                status_label_open.set_text("Stop the current crawl before opening a project.");
+                return;
+            }
             let dialog = gtk::FileDialog::new();
-            dialog.set_title("Open Crawl Project");
+            dialog.set_title("Open Project");
             let filter = gtk::FileFilter::new();
-            filter.set_name(Some("SEO Crawl Files"));
-            filter.add_pattern("*.seocrawl");
+            filter.set_name(Some("Tadpole Projects"));
+            for pattern in crate::project::OPEN_FILTER_PATTERNS {
+                filter.add_pattern(pattern);
+            }
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
 
-            let state_inner = state_open.clone();
-            let busy_inner = busy_open.clone();
-            let start_inner = start_open.clone();
-            let address_inner = address_entry_open.clone();
-            let table_inner = table_open.clone();
-            let sidebar_inner = sidebar_open.clone();
-            let summary_panel_inner = summary_panel_open.clone();
-            let mode_dropdown_inner = mode_dropdown_open.clone();
-            let edit_list_button_inner = edit_list_button_open.clone();
-            let loaded_list_urls_inner = loaded_list_urls_open.clone();
-            let link_opps_inner = link_opps_open.clone();
-            let discovery_inner = discovery_open.clone();
-            let status_label_inner = status_label_open.clone();
+            let open_ctx = ProjectOpenContext {
+                window: parent_win_open.clone(),
+                state: state_open.clone(),
+                ui_busy: busy_open.clone(),
+                ui_crawl_active: crawl_active_open.clone(),
+                start_button: start_open.clone(),
+                address_entry: address_entry_open.clone(),
+                table: table_open.clone(),
+                details: details_open.clone(),
+                sidebar: sidebar_open.clone(),
+                summary_panel: summary_panel_open.clone(),
+                mode_dropdown: mode_dropdown_open.clone(),
+                edit_list_button: edit_list_button_open.clone(),
+                loaded_list_urls: loaded_list_urls_open.clone(),
+                link_opportunities: link_opps_open.clone(),
+                discovery: discovery_open.clone(),
+                status_label: status_label_open.clone(),
+            };
 
             dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
-                        if state_inner.is_crawling() { status_label_inner.set_text("Stop the current crawl before opening a project."); return; }
-                        if busy_inner.get() { return; }
-                        let load_guard = UiBusyGuard::new(busy_inner.clone(), start_inner.clone());
-                        status_label_inner.set_text("Loading saved crawl project...");
-
-                        let state_bg = state_inner.clone();
-                        let address_bg = address_inner.clone();
-                        let table_bg = table_inner.clone();
-                        let sidebar_bg = sidebar_inner.clone();
-                        let summary_bg = summary_panel_inner.clone();
-                        let mode_dropdown_bg = mode_dropdown_inner.clone();
-                        let edit_list_bg = edit_list_button_inner.clone();
-                        let loaded_list_ref = loaded_list_urls_inner.clone();
-                        let link_opps_bg = link_opps_inner.clone();
-                        let discovery_bg = discovery_inner.clone();
-                        let status_label_bg = status_label_inner.clone();
-
-                        glib::MainContext::default().spawn_local(async move {
-                            let _load_guard = load_guard;
-                            let project_opt = tokio::task::spawn_blocking(move || {
-                                if let Ok(f) = std::fs::File::open(&path) {
-                                    let project_res: Result<crate::state::CrawlProject, _> = serde_json::from_reader(f);
-                                    project_res.ok()
-                                } else {
-                                    None
-                                }
-                            }).await.ok().flatten();
-
-                            if state_bg.is_crawling() { status_label_bg.set_text("Project not loaded because a crawl is running. Stop it and open the file again."); return; }
-                            if let Some(project) = project_opt {
-                                if let Err(e) = project.config.validate() { status_label_bg.set_text(&e); return; }
-                                address_bg.set_text(&project.seed_url);
-                                state_bg.load_project(project.clone());
-
-                                table_bg.clear();
-                                link_opps_bg.clear();
-
-                                let results = project.results.clone();
-                                let total = results.len();
-
-                                for (idx, res) in results.into_iter().enumerate() {
-                                    table_bg.add_or_update(res);
-                                    if idx % 50 == 0 {
-                                        status_label_bg.set_text(&format!("Loading rows {} / {}", idx, total));
-                                        glib::timeout_future(std::time::Duration::from_millis(1)).await;
-                                    }
-                                }
-
-                                sidebar_bg.update_counts(&state_bg);
-                                summary_bg.update(&state_bg);
-                                discovery_bg.refresh();
-
-                                let config = state_bg.get_config();
-                                let selected_idx = match config.crawl_mode {
-                                    CrawlMode::Crawl => 0,
-                                    CrawlMode::List => 1,
-                                    CrawlMode::Path => 2,
-                                    CrawlMode::Url => 3,
-                                };
-                                mode_dropdown_bg.set_selected(selected_idx);
-                                let is_list = config.crawl_mode == CrawlMode::List;
-                                address_bg.set_visible(!is_list);
-                                edit_list_bg.set_visible(is_list);
-                                if is_list {
-                                    let urls: Vec<String> = project.seed_url.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                                    *loaded_list_ref.borrow_mut() = urls;
-                                }
-                                status_label_bg.set_text(&format!("Loaded project with {} URLs.", total));
-                            } else {
-                                status_label_bg.set_text("Failed to open project file.");
-                            }
-                        });
+                        open_project_with_guard(path, open_ctx.clone());
                     }
                 }
             });
@@ -2031,6 +2010,151 @@ impl MainWindow {
             }
         });
     }
+}
+
+#[derive(Clone)]
+struct ProjectOpenContext {
+    window: adw::ApplicationWindow,
+    state: CrawlState,
+    ui_busy: Rc<std::cell::Cell<bool>>,
+    ui_crawl_active: Rc<std::cell::Cell<bool>>,
+    start_button: gtk::Button,
+    address_entry: gtk::Entry,
+    table: Rc<Table>,
+    details: Rc<Details>,
+    sidebar: Rc<Sidebar>,
+    summary_panel: Rc<crate::ui::summary::SummaryPanel>,
+    mode_dropdown: gtk::DropDown,
+    edit_list_button: gtk::Button,
+    loaded_list_urls: Rc<RefCell<Vec<String>>>,
+    link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
+    discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
+    status_label: gtk::Label,
+}
+
+fn open_project_with_guard(path: std::path::PathBuf, ctx: ProjectOpenContext) {
+    match crate::project::open_guard(
+        ctx.ui_crawl_active.get() || ctx.state.is_crawling(),
+        ctx.ui_busy.get(),
+        ctx.state.get_stats().crawled,
+    ) {
+        crate::project::OpenGuard::BlockedByActiveCrawl => {
+            if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+                ctx.status_label
+                    .set_text("Stop the current crawl before opening a project.");
+            }
+        }
+        crate::project::OpenGuard::ConfirmReplace { existing_urls } => {
+            let file_label = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("project");
+            let alert = adw::AlertDialog::new(
+                Some("Discard Current Crawl Results?"),
+                Some(&format!(
+                    "Opening \"{file_label}\" will permanently discard {existing_urls} crawled URLs and audit data."
+                )),
+            );
+            alert.add_response("cancel", "Cancel");
+            alert.add_response("discard", "Discard and Open");
+            alert.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+            alert.set_default_response(Some("cancel"));
+            alert.set_close_response("cancel");
+
+            let window = ctx.window.clone();
+            alert.choose(Some(&window), None::<&gio::Cancellable>, move |response| {
+                if response == "discard" {
+                    load_project_from_path(path, ctx);
+                }
+            });
+        }
+        crate::project::OpenGuard::Proceed => {
+            load_project_from_path(path, ctx);
+        }
+    }
+}
+
+fn load_project_from_path(path: std::path::PathBuf, ctx: ProjectOpenContext) {
+    if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+        ctx.status_label
+            .set_text("Stop the current crawl before opening a project.");
+        return;
+    }
+    if ctx.ui_busy.get() {
+        return;
+    }
+    let load_guard = UiBusyGuard::new(ctx.ui_busy.clone(), ctx.start_button.clone());
+    ctx.status_label.set_text("Loading saved project...");
+
+    glib::MainContext::default().spawn_local(async move {
+        let _load_guard = load_guard;
+        let load_result = tokio::task::spawn_blocking(move || crate::project::load(&path)).await;
+
+        if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+            ctx.status_label.set_text(
+                "Project not loaded because a crawl is running. Stop it and open the file again.",
+            );
+            return;
+        }
+
+        match load_result {
+            Ok(Ok(project)) => {
+                ctx.address_entry.set_text(&project.seed_url);
+                ctx.state.load_project(project.clone());
+
+                ctx.table.clear();
+                ctx.details.clear();
+                ctx.link_opportunities.clear();
+
+                let results = project.results.clone();
+                let total = results.len();
+
+                for (idx, res) in results.into_iter().enumerate() {
+                    ctx.table.add_or_update(res);
+                    if idx % 50 == 0 {
+                        ctx.status_label
+                            .set_text(&format!("Loading rows {} / {}", idx, total));
+                        glib::timeout_future(std::time::Duration::from_millis(1)).await;
+                    }
+                }
+
+                ctx.sidebar.update_counts(&ctx.state);
+                ctx.summary_panel.update(&ctx.state);
+                ctx.discovery.refresh();
+
+                let config = ctx.state.get_config();
+                let selected_idx = match config.crawl_mode {
+                    CrawlMode::Crawl => 0,
+                    CrawlMode::List => 1,
+                    CrawlMode::Path => 2,
+                    CrawlMode::Url => 3,
+                };
+                ctx.mode_dropdown.set_selected(selected_idx);
+                let is_list = config.crawl_mode == CrawlMode::List;
+                ctx.address_entry.set_visible(!is_list);
+                ctx.edit_list_button.set_visible(is_list);
+                if is_list {
+                    let urls: Vec<String> = project
+                        .seed_url
+                        .lines()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    *ctx.loaded_list_urls.borrow_mut() = urls;
+                }
+                ctx.status_label
+                    .set_text(&format!("Loaded project with {} URLs.", total));
+            }
+            Ok(Err(e)) => {
+                ctx.status_label
+                    .set_text(&format!("Failed to open project file: {e}"));
+            }
+            Err(e) => {
+                ctx.status_label
+                    .set_text(&format!("Failed to open project file: {e}"));
+            }
+        }
+    });
 }
 
 async fn fetch_openrouter_models() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>>

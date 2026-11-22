@@ -44,7 +44,7 @@ The discovery/event channels are unbounded channel types; the admitted URL count
 
 ## Project compatibility and secrets
 
-`.seocrawl` remains JSON with `seed_url`, `config`, `results`, `stats`, and an optional `discovery` snapshot. Older projects load without fabricated discovery evidence. An unfinished snapshot reopens as stopped, partial evidence. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
+`.tadpole` (and legacy `.seocrawl`) Projects remain JSON with `seed_url`, `config`, `results`, `stats`, and an optional `discovery` snapshot. Older projects load without fabricated discovery evidence. An unfinished snapshot reopens as stopped, partial evidence. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
 
 Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` implementation. Old embedded keys are ignored when loading. They still exist in old files on disk until the owner removes them. Atomic saves write/sync a private temporary file beside the destination and replace it only after successful serialization. A compact format reduces file size without changing the schema.
 

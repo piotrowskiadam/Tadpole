@@ -9,14 +9,16 @@ APPDIR="Tadpole.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/share/applications"
+mkdir -p "$APPDIR/usr/share/mime/packages"
 mkdir -p "$APPDIR/usr/share/pixmaps"
 
 # Copy binary
 cp target/release/tadpole "$APPDIR/usr/bin/tadpole"
 
-# Copy desktop file and icons
+# Copy desktop file, MIME metadata and icons
 cp snap/gui/com.tadpole.seo.desktop "$APPDIR/com.tadpole.seo.desktop"
 cp snap/gui/com.tadpole.seo.desktop "$APPDIR/usr/share/applications/com.tadpole.seo.desktop"
+cp flatpak/com.tadpole.seo.mime.xml "$APPDIR/usr/share/mime/packages/com.tadpole.seo.xml"
 cp tadpolelogonobg.png "$APPDIR/com.tadpole.seo.png"
 cp tadpolelogonobg.png "$APPDIR/.DirIcon"
 cp tadpolelogonobg.png "$APPDIR/usr/share/pixmaps/com.tadpole.seo.png"
