@@ -88,5 +88,7 @@ parts:
       # Install desktop file and icon into the snap payload
       install -Dm644 snap/gui/com.tadpole.seo.desktop \
         "$CRAFT_PART_INSTALL/usr/share/applications/com.tadpole.seo.desktop"
+      install -Dm644 flatpak/com.tadpole.seo.mime.xml \
+        "$CRAFT_PART_INSTALL/usr/share/mime/packages/com.tadpole.seo.xml"
       install -Dm644 tadpolelogonobg.png \
         "$CRAFT_PART_INSTALL/usr/share/pixmaps/com.tadpole.seo.png"

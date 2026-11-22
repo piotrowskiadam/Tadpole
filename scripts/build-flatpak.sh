@@ -11,7 +11,7 @@ mkdir -p "$work/source/.cargo"
 if git -C "$root" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     (cd "$root" && git ls-files -z --cached --others --exclude-standard --deduplicate | tar --null -T - -cf -) | tar -C "$work/source" -xf -
 else
-    tar -C "$root" --exclude=./.git --exclude=./target --exclude=./dist --exclude=./.flatpak-builder --exclude=./vendor --exclude=./.env --exclude='./.env.*' --exclude='*.seocrawl' -cf - . | tar -C "$work/source" -xf -
+    tar -C "$root" --exclude=./.git --exclude=./target --exclude=./dist --exclude=./.flatpak-builder --exclude=./vendor --exclude=./.env --exclude='./.env.*' --exclude='*.tadpole' --exclude='*.seocrawl' -cf - . | tar -C "$work/source" -xf -
 fi
 cargo vendor --locked --manifest-path "$work/source/Cargo.toml" "$work/source/vendor" > /dev/null
 cat > "$work/source/.cargo/config.toml" <<'CONFIG'
