@@ -1132,3 +1132,99 @@ fn export_csv_and_single_issue_csv_are_uncapped_omit_zero_count_preserve_caveats
     let empty_md = export_markdown(&clean);
     assert!(empty_md.contains("No active Issues found"));
 }
+
+#[test]
+fn severity_summaries_deduplicate_affected_urls_per_tier() {
+    let mut page_a = indexable_page("https://example.com/a");
+    page_a.title = None;
+    page_a.h1 = None;
+    page_a.h1_count = 0;
+
+    let mut page_b = indexable_page("https://example.com/b");
+    page_b.title = None;
+
+    let mut page_404 = indexable_page("https://example.com/missing");
+    page_404.status_code = Some(404);
+    page_404.indexable = false;
+
+    let page_ok = indexable_page("https://example.com/ok");
+
+    let report = evaluate(&[page_a, page_b, page_404, page_ok], None, None);
+    let summaries = report.severity_summaries();
+
+    assert_eq!(summaries.len(), 4);
+    // Critical: ClientError4xx -> 1 active Issue, 1 unique URL (25.0% of 4)
+    assert_eq!(summaries[0].severity, Severity::Critical);
+    assert_eq!(summaries[0].active_issues, 1);
+    assert_eq!(summaries[0].unique_affected_urls, 1);
+    assert!((summaries[0].affected_percentage - 25.0).abs() < 0.01);
+
+    // High: MissingTitle (a, b) + MissingH1 (a) -> 2 active Issues, 2 unique URLs (50.0% of 4, NOT 3)
+    assert_eq!(summaries[1].severity, Severity::High);
+    assert_eq!(summaries[1].active_issues, 2);
+    assert_eq!(summaries[1].unique_affected_urls, 2);
+    assert!((summaries[1].affected_percentage - 50.0).abs() < 0.01);
+}
+
+#[test]
+fn filter_issues_respects_severity_show_passed_and_search_query() {
+    let mut page_404 = indexable_page("https://example.com/broken-checkout");
+    page_404.status_code = Some(404);
+    page_404.indexable = false;
+
+    let mut page_no_title = indexable_page("https://example.com/landing-promo");
+    page_no_title.title = None;
+
+    let report = evaluate(&[page_404, page_no_title], None, None);
+
+    // Default: active Issues only (0-count hidden)
+    let active_all = report.filter_issues(None, false, "");
+    assert_eq!(active_all.len(), 2);
+    assert!(active_all.iter().all(|issue| issue.is_active()));
+
+    // Show passed checks reveals all 29 catalogued Issues
+    let with_passed = report.filter_issues(None, true, "");
+    assert_eq!(with_passed.len(), IssueKind::ALL.len());
+
+    // Filter by Severity::Critical (active only -> ClientError4xx)
+    let critical_only = report.filter_issues(Some(Severity::Critical), false, "");
+    assert_eq!(critical_only.len(), 1);
+    assert_eq!(critical_only[0].kind, IssueKind::ClientError4xx);
+
+    // Search by Affected URL substring matches the Issue containing that URL
+    let by_url = report.filter_issues(None, false, "landing-promo");
+    assert_eq!(by_url.len(), 1);
+    assert_eq!(by_url[0].kind, IssueKind::MissingTitle);
+
+    // Search by Issue name (case-insensitive)
+    let by_name = report.filter_issues(None, false, "client error");
+    assert_eq!(by_name.len(), 1);
+    assert_eq!(by_name[0].kind, IssueKind::ClientError4xx);
+
+    // Filtering Affected URLs within an Issue
+    let missing_title = report.issue(IssueKind::MissingTitle).unwrap();
+    assert_eq!(missing_title.filter_affected_urls("promo").len(), 1);
+    assert_eq!(missing_title.filter_affected_urls("nonexistent").len(), 0);
+}
+
+#[test]
+fn jump_destination_routes_crawl_and_discovery_urls_appropriately() {
+    use tadpole::issues::{JumpDestination, jump_destination};
+
+    assert_eq!(
+        jump_destination(IssueSource::Crawl, true, true),
+        JumpDestination::CrawlResults
+    );
+    assert_eq!(
+        jump_destination(IssueSource::Crawl, false, true),
+        JumpDestination::SitemapDiscovery
+    );
+    assert_eq!(
+        jump_destination(IssueSource::Discovery, true, true),
+        JumpDestination::SitemapDiscovery
+    );
+    assert_eq!(
+        jump_destination(IssueSource::Discovery, true, false),
+        JumpDestination::CrawlResults
+    );
+}

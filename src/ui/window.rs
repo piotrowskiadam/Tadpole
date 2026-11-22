@@ -27,6 +27,11 @@ impl Drop for UiBusyGuard {
     }
 }
 
+const TAB_CRAWL_RESULTS: u32 = 0;
+const TAB_ISSUES: u32 = 1;
+const TAB_DISCOVERY: u32 = 2;
+const TAB_LINK_OPPORTUNITIES: u32 = 3;
+
 pub struct MainWindow {
     window: adw::ApplicationWindow,
     state: CrawlState,
@@ -36,6 +41,7 @@ pub struct MainWindow {
     table: Rc<Table>,
     details: Rc<Details>,
     summary_panel: Rc<crate::ui::summary::SummaryPanel>,
+    issues: Rc<crate::ui::issues::IssuesPanel>,
     link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
     discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
     visualizer_button: gtk::Button,
@@ -355,7 +361,10 @@ impl MainWindow {
             crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()),
         );
 
+        let details = Rc::new(Details::new());
         right_paned.set_start_child(Some(&table_box));
+        right_paned.set_end_child(Some(details.widget()));
+
         main_notebook.append_page(&content_box, Some(&gtk::Label::new(Some("Crawl Results"))));
         let discovery = crate::ui::discovery::DiscoveryPanel::new(
             state.clone(),
@@ -365,7 +374,7 @@ impl MainWindow {
                 move |target| {
                     links.analyze_target(&target);
                     if let Some(notebook) = notebook.upgrade() {
-                        notebook.set_current_page(Some(2));
+                        notebook.set_current_page(Some(TAB_LINK_OPPORTUNITIES));
                     }
                 }
             },
@@ -380,6 +389,43 @@ impl MainWindow {
                 }
             },
         );
+        let issues = crate::ui::issues::IssuesPanel::new(state.clone(), {
+            let state = state.clone();
+            let table = table.clone();
+            let details = details.clone();
+            let sidebar = sidebar.clone();
+            let search = search_entry.clone();
+            let discovery = discovery.clone();
+            let notebook = main_notebook.downgrade();
+            move |url, kind, source| {
+                let in_crawl = state.get_result(&url).is_some();
+                let in_discovery = state
+                    .discovery()
+                    .is_some_and(|snapshot| snapshot.rows.iter().any(|row| row.url == url));
+                match crate::issues::jump_destination(source, in_crawl, in_discovery) {
+                    crate::issues::JumpDestination::CrawlResults => {
+                        if let Some(notebook) = notebook.upgrade() {
+                            notebook.set_current_page(Some(TAB_CRAWL_RESULTS));
+                        }
+                        if !table.select_url_and_reveal(&url) {
+                            sidebar.select_all();
+                            if !search.text().is_empty() {
+                                search.set_text("");
+                            }
+                            let _ = table.select_url_and_reveal(&url);
+                        }
+                        details.update(&url, &state);
+                    }
+                    crate::issues::JumpDestination::SitemapDiscovery => {
+                        if let Some(notebook) = notebook.upgrade() {
+                            notebook.set_current_page(Some(TAB_DISCOVERY));
+                        }
+                        let _ = discovery.select_url(&url, kind.discovery_finding());
+                    }
+                }
+            }
+        });
+        main_notebook.append_page(issues.widget(), Some(&gtk::Label::new(Some("Issues"))));
         main_notebook.append_page(
             discovery.widget(),
             Some(&gtk::Label::new(Some("Sitemap & Discovery"))),
@@ -388,9 +434,14 @@ impl MainWindow {
             link_opportunities.widget(),
             Some(&gtk::Label::new(Some("Link Opportunities (beta)"))),
         );
-
-        let details = Rc::new(Details::new());
-        right_paned.set_end_child(Some(details.widget()));
+        {
+            let issues = Rc::downgrade(&issues);
+            main_notebook.connect_switch_page(move |_, _, index| {
+                if let Some(issues) = issues.upgrade() {
+                    issues.set_tab_active(index == TAB_ISSUES);
+                }
+            });
+        }
 
         let sep = gtk::Separator::new(gtk::Orientation::Vertical);
         content_box.append(&sep);
@@ -450,6 +501,7 @@ impl MainWindow {
             table,
             details,
             summary_panel,
+            issues,
             link_opportunities,
             discovery,
             visualizer_button,
@@ -523,6 +575,7 @@ impl MainWindow {
                 loaded_list_urls: self.loaded_list_urls.clone(),
                 link_opportunities: self.link_opportunities.clone(),
                 discovery: self.discovery.clone(),
+                issues: self.issues.clone(),
                 status_label: self.status_label.clone(),
             },
         );
@@ -541,7 +594,7 @@ impl MainWindow {
             .ancestor(gtk::Notebook::static_type())
             .and_downcast::<gtk::Notebook>()
         {
-            notebook.set_current_page(Some(1));
+            notebook.set_current_page(Some(TAB_DISCOVERY));
         }
     }
 
@@ -565,6 +618,7 @@ impl MainWindow {
         self.table.select_url("https://demo.example/");
         self.sidebar.update_counts(&self.state);
         self.summary_panel.update(&self.state);
+        self.issues.refresh();
         self.address_entry.set_text("https://demo.example/");
         self.address_entry.set_sensitive(false);
         self.start_button.set_sensitive(false);
@@ -609,6 +663,7 @@ impl MainWindow {
         let loaded_list_urls = self.loaded_list_urls.clone();
         let link_opps = self.link_opportunities.clone();
         let discovery = self.discovery.clone();
+        let issues = self.issues.clone();
         let vis_button = self.visualizer_button.clone();
 
         // Create thread-safe Tokio channel
@@ -1646,6 +1701,7 @@ impl MainWindow {
         let loaded_list_urls_open = loaded_list_urls.clone();
         let link_opps_open = link_opps.clone();
         let discovery_open = discovery.clone();
+        let issues_open = issues.clone();
         let status_label_open = status_label.clone();
         let busy_open = ui_busy.clone();
         let crawl_active_open = ui_crawl_active.clone();
@@ -1685,6 +1741,7 @@ impl MainWindow {
                 loaded_list_urls: loaded_list_urls_open.clone(),
                 link_opportunities: link_opps_open.clone(),
                 discovery: discovery_open.clone(),
+                issues: issues_open.clone(),
                 status_label: status_label_open.clone(),
             };
 
@@ -1718,6 +1775,7 @@ impl MainWindow {
         let busy_finish = ui_busy.clone();
         let crawl_active_finish = ui_crawl_active.clone();
         let discovery_finish = discovery.clone();
+        let issues_finish = issues.clone();
 
         glib::MainContext::default().spawn_local(async move {
             let mut last_refresh = std::time::Instant::now();
@@ -1728,6 +1786,7 @@ impl MainWindow {
                             discovery_finish.refresh();
                             last_refresh = std::time::Instant::now();
                         }
+                        issues_finish.notify_crawl_progress();
                     },
                     CrawlUpdate::Discovered(url) => {
                         status_label_clone.set_text(&format!("Discovered: {}", url));
@@ -1741,6 +1800,7 @@ impl MainWindow {
                             last_refresh = std::time::Instant::now();
                             glib::timeout_future(std::time::Duration::from_millis(1)).await;
                         }
+                        issues_finish.notify_crawl_progress();
 
                         let stats = state_clone.get_stats();
                         let now = std::time::Instant::now();
@@ -1846,6 +1906,7 @@ impl MainWindow {
                         summary_panel_clone.update(&state_clone);
                         table_clone.set_filter(table_clone.get_active_filter());
                         discovery_finish.refresh();
+                        issues_finish.refresh();
                         crawl_active_finish.set(false);
                     }
                 }
@@ -1866,6 +1927,7 @@ impl MainWindow {
         let loaded_list_urls_start = loaded_list_urls.clone();
         let link_opps_start = link_opps.clone();
         let discovery_start = discovery.clone();
+        let issues_start = issues.clone();
         let window_start = self.window.clone();
         let crawl_start_time_start = crawl_start_time.clone();
         let crawl_samples_start = crawl_samples.clone();
@@ -1919,6 +1981,7 @@ impl MainWindow {
                     let details_start = details_start.clone();
                     let link_opps_start = link_opps_start.clone();
                     let discovery_start = discovery_start.clone();
+                    let issues_start = issues_start.clone();
                     let sidebar_start = sidebar_start.clone();
                     let summary_panel_start = summary_panel_start.clone();
                     let pause_button_start = pause_button_start.clone();
@@ -1940,6 +2003,7 @@ impl MainWindow {
                         details_start.clear();
                         link_opps_start.clear();
                         discovery_start.refresh();
+                        issues_start.refresh();
                         sidebar_start.update_counts(&state_start);
                         summary_panel_start.update(&state_start);
 
@@ -2029,6 +2093,7 @@ struct ProjectOpenContext {
     loaded_list_urls: Rc<RefCell<Vec<String>>>,
     link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
     discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
+    issues: Rc<crate::ui::issues::IssuesPanel>,
     status_label: gtk::Label,
 }
 
@@ -2121,6 +2186,7 @@ fn load_project_from_path(path: std::path::PathBuf, ctx: ProjectOpenContext) {
                 ctx.sidebar.update_counts(&ctx.state);
                 ctx.summary_panel.update(&ctx.state);
                 ctx.discovery.refresh();
+                ctx.issues.refresh();
 
                 let config = ctx.state.get_config();
                 let selected_idx = match config.crawl_mode {
