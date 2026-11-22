@@ -7,7 +7,10 @@ fn sample_page(url: &str) -> CrawlResult {
 
 #[test]
 fn project_save_defaults_use_tadpole_and_open_accepts_legacy_seocrawl() {
-    assert_eq!(tadpole::project::DEFAULT_PROJECT_FILENAME, "project.tadpole");
+    assert_eq!(
+        tadpole::project::DEFAULT_PROJECT_FILENAME,
+        "project.tadpole"
+    );
     assert_eq!(tadpole::project::SAVE_FILTER_PATTERNS, &["*.tadpole"]);
     assert_eq!(
         tadpole::project::OPEN_FILTER_PATTERNS,
@@ -169,7 +172,10 @@ fn saving_over_existing_tadpole_project_replaces_atomically_without_stray_temp_f
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
-    assert_eq!(entries, vec![std::ffi::OsString::from("example.com.tadpole")]);
+    assert_eq!(
+        entries,
+        vec![std::ffi::OsString::from("example.com.tadpole")]
+    );
 }
 
 #[test]

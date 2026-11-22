@@ -2,9 +2,7 @@
 //! GTK-independent `crate::issues` engine.
 
 use crate::{
-    issues::{
-        self, AffectedUrl, Issue, IssueKind, IssueReport, IssueSource, Severity,
-    },
+    issues::{self, AffectedUrl, Issue, IssueKind, IssueReport, IssueSource, Severity},
     state::CrawlState,
 };
 use adw::prelude::*;
@@ -309,7 +307,8 @@ impl IssuesPanel {
         let severity_dropdown =
             gtk::DropDown::from_strings(&["All Severities", "Critical", "High", "Medium", "Low"]);
         severity_dropdown.set_hexpand(true);
-        severity_dropdown.update_property(&[gtk::accessible::Property::Label("Filter by Severity")]);
+        severity_dropdown
+            .update_property(&[gtk::accessible::Property::Label("Filter by Severity")]);
         filter_row.append(&severity_dropdown);
         left_pane.append(&filter_row);
 
@@ -345,7 +344,9 @@ impl IssuesPanel {
         detail_empty.set_valign(gtk::Align::Center);
         let detail_empty_title = label("Select an Issue", "title-3");
         detail_empty_title.set_halign(gtk::Align::Center);
-        let detail_empty_body = plain_paragraph("Choose an Issue from the list to inspect its Rationale, Suggested Action, and Affected URLs.");
+        let detail_empty_body = plain_paragraph(
+            "Choose an Issue from the list to inspect its Rationale, Suggested Action, and Affected URLs.",
+        );
         detail_empty_body.set_halign(gtk::Align::Center);
         detail_empty_body.add_css_class("dim-label");
         detail_empty.append(&detail_empty_title);
@@ -555,7 +556,11 @@ impl IssuesPanel {
                 if p.syncing_controls.get() {
                     return;
                 }
-                let next = if btn.is_active() { Some(severity) } else { None };
+                let next = if btn.is_active() {
+                    Some(severity)
+                } else {
+                    None
+                };
                 p.set_severity_filter(next);
             });
         }
@@ -914,7 +919,8 @@ impl IssuesPanel {
 
         // Update severity badge class and text
         for tier in Severity::ALL {
-            self.detail_badge.remove_css_class(severity_badge_class(tier));
+            self.detail_badge
+                .remove_css_class(severity_badge_class(tier));
         }
         self.detail_badge.set_text(issue.severity.label());
         self.detail_badge
@@ -1157,7 +1163,14 @@ fn build_issue_row(issue: &Issue) -> gtk::Box {
     let badge = severity_badge(issue.severity);
     top.append(&badge);
 
-    let name = label(&issue.name, if issue.is_active() { "bold" } else { "dim-label" });
+    let name = label(
+        &issue.name,
+        if issue.is_active() {
+            "bold"
+        } else {
+            "dim-label"
+        },
+    );
     name.set_wrap(true);
     name.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     name.set_hexpand(true);

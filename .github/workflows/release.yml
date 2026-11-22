@@ -116,6 +116,7 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-clang-x86_64-toolchain
+            mingw-w64-clang-x86_64-pkgconf
             mingw-w64-clang-x86_64-gtk4
             mingw-w64-clang-x86_64-libadwaita
             mingw-w64-clang-x86_64-vulkan-loader
@@ -169,6 +170,7 @@ jobs:
           SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
           mkdir -p "$SCHEMA_DIR"
           cp /clang64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
+          cp /clang64/share/glib-2.0/schemas/org.gtk.gtk4.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
           cp /clang64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
 
           echo "=== Copying icon themes ==="

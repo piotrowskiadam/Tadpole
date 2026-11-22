@@ -867,11 +867,7 @@ fn issue_kind_for_finding(finding: Finding) -> Option<IssueKind> {
     }
 }
 
-fn matches_crawl_issue(
-    kind: IssueKind,
-    result: &CrawlResult,
-    duplicates: &DuplicateIndex,
-) -> bool {
+fn matches_crawl_issue(kind: IssueKind, result: &CrawlResult, duplicates: &DuplicateIndex) -> bool {
     match kind {
         IssueKind::Redirection3xx => {
             CrawlFilter::Status3xx.matches(result, &[])
@@ -901,15 +897,14 @@ fn crawl_evidence(
     discovery: Option<&DiscoverySnapshot>,
 ) -> String {
     match kind {
-        IssueKind::ServerError5xx | IssueKind::ClientError4xx => match (
-            result.status_code,
-            result.error_message.as_deref(),
-        ) {
-            (Some(code), Some(msg)) if !msg.is_empty() => format!("HTTP {code} ({msg})"),
-            (Some(code), _) => format!("HTTP {code}"),
-            (None, Some(msg)) => msg.to_string(),
-            (None, None) => "HTTP error".to_string(),
-        },
+        IssueKind::ServerError5xx | IssueKind::ClientError4xx => {
+            match (result.status_code, result.error_message.as_deref()) {
+                (Some(code), Some(msg)) if !msg.is_empty() => format!("HTTP {code} ({msg})"),
+                (Some(code), _) => format!("HTTP {code}"),
+                (None, Some(msg)) => msg.to_string(),
+                (None, None) => "HTTP error".to_string(),
+            }
+        }
         IssueKind::Redirection3xx => {
             let final_url = discovery
                 .and_then(|d| d.responses.get(&result.url))
@@ -1053,9 +1048,7 @@ fn discovery_evidence(finding: Finding, row: &DiscoveryRow) -> String {
         Finding::Canonical => {
             let target = row.canonical.as_deref().unwrap_or("unknown");
             let expected = row.response.final_url.as_deref().unwrap_or(&row.url);
-            format!(
-                "Canonical points to {target} (expected {expected}); listed in {sitemap_ref}"
-            )
+            format!("Canonical points to {target} (expected {expected}); listed in {sitemap_ref}")
         }
         Finding::Unchecked => format!("{}; listed in {sitemap_ref}", row.observation),
         Finding::Absent => match (row.reached_depth, row.http) {
@@ -1113,9 +1106,7 @@ fn collect_scope_caveats(
                 });
             }
             let max_urls = config.map_or(snapshot.coverage.max_urls, |cfg| cfg.max_urls);
-            if snapshot.coverage.url_limit_hit
-                || (max_urls > 0 && results.len() >= max_urls)
-            {
+            if snapshot.coverage.url_limit_hit || (max_urls > 0 && results.len() >= max_urls) {
                 caveats.push(ScopeCaveat {
                     kind: ScopeCaveatKind::UrlLimitReached,
                     message: format!(

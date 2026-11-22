@@ -346,8 +346,7 @@ fn build(app: &adw::Application) {
         "URL limit reached",
         "No sitemap discovery",
     ]);
-    scenario_dropdown
-        .update_property(&[gtk::accessible::Property::Label("Preview crawl state")]);
+    scenario_dropdown.update_property(&[gtk::accessible::Property::Label("Preview crawl state")]);
     status_bar.append(&scenario_dropdown);
 
     let state = CrawlState::new();

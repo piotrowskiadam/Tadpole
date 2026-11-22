@@ -227,9 +227,9 @@ impl DuplicateIndex {
     }
     pub fn matches(&self, filter: CrawlFilter, result: &CrawlResult) -> bool {
         match filter {
-            CrawlFilter::TitleDuplicate
-            | CrawlFilter::DescDuplicate
-            | CrawlFilter::H1Duplicate => self.count(filter, result) > 1,
+            CrawlFilter::TitleDuplicate | CrawlFilter::DescDuplicate | CrawlFilter::H1Duplicate => {
+                self.count(filter, result) > 1
+            }
             _ => filter.matches(result, &[]),
         }
     }

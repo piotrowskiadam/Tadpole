@@ -156,7 +156,8 @@ fn catalog_spans_all_four_severities_with_metadata_counts_percentages_and_zero_c
 }
 
 #[test]
-fn content_metadata_social_and_schema_issues_gate_strictly_to_2xx_indexable_html_while_raw_filters_stay_raw() {
+fn content_metadata_social_and_schema_issues_gate_strictly_to_2xx_indexable_html_while_raw_filters_stay_raw()
+ {
     let mut healthy = indexable_page("https://example.com/");
     healthy.title = Some("Shared Title Only On One Indexable Page!".into());
     healthy.h1 = Some("Shared H1 Only On One Indexable Page".into());
@@ -410,7 +411,11 @@ fn discovery_findings_map_all_seven_variants_and_preserve_overlapping_crawl_and_
     // 5 crawled URLs + 1 unfetched sitemap URL = 6 observed URLs.
     assert_eq!(report.crawled_urls, 5);
     assert_eq!(report.observed_urls, 6);
-    assert!(report.caveats.is_empty(), "clean finished crawl with readable sitemap should have no caveats: {:?}", report.caveats);
+    assert!(
+        report.caveats.is_empty(),
+        "clean finished crawl with readable sitemap should have no caveats: {:?}",
+        report.caveats
+    );
 
     // Verify all 7 Discovery Issues fired with expected Severities and Evidence.
     let cases = [
@@ -541,7 +546,11 @@ fn scope_caveats_flag_stopped_capped_and_missing_sitemap_evidence_including_lega
         is_index: None,
     });
 
-    let report = evaluate(&[indexable_page("https://example.com/")], Some(&snapshot), Some(&config));
+    let report = evaluate(
+        &[indexable_page("https://example.com/")],
+        Some(&snapshot),
+        Some(&config),
+    );
     assert!(report.has_caveat(ScopeCaveatKind::CrawlStopped));
     assert!(report.has_caveat(ScopeCaveatKind::UrlLimitReached));
     assert!(report.has_caveat(ScopeCaveatKind::DepthLimitReached));
@@ -845,7 +854,13 @@ async fn loopback_http_crawl_unifies_all_severities_gating_overlaps_and_capped_c
     );
 
     // Zero-count check: ServerError5xx did not occur
-    assert_eq!(report.issue(IssueKind::ServerError5xx).unwrap().affected_count, 0);
+    assert_eq!(
+        report
+            .issue(IssueKind::ServerError5xx)
+            .unwrap()
+            .affected_count,
+        0
+    );
 
     // 2. URL-limit-capped crawl produces UrlLimitReached caveat + SitemapUnchecked
     let capped_state = CrawlState::new();
@@ -909,7 +924,10 @@ fn export_markdown_renders_scope_caveats_severity_summary_and_active_issues_omit
     assert_eq!(md, export_markdown(&report));
 
     // Scope caveats header present (missing sitemap discovery + URL limit reached)
-    assert!(md.contains("Scope Caveats"), "expected Scope Caveats header:\n{md}");
+    assert!(
+        md.contains("Scope Caveats"),
+        "expected Scope Caveats header:\n{md}"
+    );
     assert!(md.contains("No sitemap discovery evidence is available"));
     assert!(md.contains("configured URL limit (3 URLs)"));
 
@@ -922,7 +940,9 @@ fn export_markdown_renders_scope_caveats_severity_summary_and_active_issues_omit
     assert!(!md.to_lowercase().contains("health score"));
 
     // Active Issues appear in Severity order with Rationale, Suggested Action, Affected URL, and Evidence
-    let critical_pos = md.find("Client Error (4xx)").expect("ClientError4xx missing");
+    let critical_pos = md
+        .find("Client Error (4xx)")
+        .expect("ClientError4xx missing");
     let high_pos = md.find("Missing Title").expect("MissingTitle missing");
     let low_pos = md
         .find("Description > 155 chars")
@@ -1031,7 +1051,8 @@ fn export_markdown_and_single_issue_markdown_cap_inline_urls_at_25_with_csv_trun
 }
 
 #[test]
-fn export_csv_and_single_issue_csv_are_uncapped_omit_zero_count_preserve_caveats_and_escape_rfc4180() {
+fn export_csv_and_single_issue_csv_are_uncapped_omit_zero_count_preserve_caveats_and_escape_rfc4180()
+ {
     // 30 pages missing a title (exceeds Markdown's 25-URL cap) + 1 page with commas, quotes, and newlines in Evidence.
     let mut results: Vec<CrawlResult> = (1..=30)
         .map(|i| {
@@ -1105,15 +1126,23 @@ fn export_csv_and_single_issue_csv_are_uncapped_omit_zero_count_preserve_caveats
     assert_eq!(&schema_row[0], "High");
     assert_eq!(&schema_row[2], "https://example.com/tricky,page");
     assert!(schema_row[3].contains("Expected \"@type\", found comma, and\nnewline"));
-    assert_eq!(&schema_row[4], IssueKind::StructuredDataErrors.suggested_action());
+    assert_eq!(
+        &schema_row[4],
+        IssueKind::StructuredDataErrors.suggested_action()
+    );
     assert_eq!(&schema_row[5], "Crawl Results");
 
     // Zero-count Issues must not appear in full CSV.
-    assert!(!rows.iter().any(|r| &r[1] == IssueKind::ServerError5xx.name()));
+    assert!(
+        !rows
+            .iter()
+            .any(|r| &r[1] == IssueKind::ServerError5xx.name())
+    );
 
     // Single selected Issue CSV (MissingTitle only -> 30 uncapped rows, preserves scope caveats).
     let missing_title = report.issue(IssueKind::MissingTitle).unwrap();
-    let single_csv = export_issue_csv(&report, missing_title).expect("export_issue_csv should succeed");
+    let single_csv =
+        export_issue_csv(&report, missing_title).expect("export_issue_csv should succeed");
     let mut single_reader = csv::Reader::from_reader(single_csv.as_bytes());
     let single_rows: Vec<csv::StringRecord> = single_reader.records().map(|r| r.unwrap()).collect();
     assert_eq!(single_rows.len(), 30);

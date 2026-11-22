@@ -80,8 +80,7 @@ fn main() {
         if let Some(path) = tadpole::project::resolve_open_project_path(paths) {
             main_window.open_project_path(path);
         } else {
-            main_window
-                .show_status("Unsupported file type. Open a .tadpole or .seocrawl project.");
+            main_window.show_status("Unsupported file type. Open a .tadpole or .seocrawl project.");
         }
     });
 

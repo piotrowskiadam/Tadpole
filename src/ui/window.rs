@@ -1718,13 +1718,17 @@ impl MainWindow {
             dialog.set_default_filter(Some(&filter));
 
             let open_ctx_for_dialog = open_ctx.clone();
-            dialog.open(Some(&open_ctx.window), None::<&gio::Cancellable>, move |result| {
-                if let Ok(file) = result {
-                    if let Some(path) = file.path() {
-                        open_project_with_guard(path, open_ctx_for_dialog.clone());
+            dialog.open(
+                Some(&open_ctx.window),
+                None::<&gio::Cancellable>,
+                move |result| {
+                    if let Ok(file) = result {
+                        if let Some(path) = file.path() {
+                            open_project_with_guard(path, open_ctx_for_dialog.clone());
+                        }
                     }
-                }
-            });
+                },
+            );
         });
 
         // Tracking crawl velocity and samples for telemetry
