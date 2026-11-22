@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fast local guardrail: prevent unformatted Rust commits from breaking CI.
+if ! cargo fmt --all --check; then
+    echo ""
+    echo "Pre-commit check failed: run 'cargo fmt --all' and re-stage before committing." >&2
+    exit 1
+fi

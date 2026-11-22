@@ -9,6 +9,7 @@ fi
 echo "=== Updating package database and installing dependencies ==="
 pacman -S --noconfirm --needed \
     mingw-w64-clang-x86_64-toolchain \
+    mingw-w64-clang-x86_64-pkgconf \
     mingw-w64-clang-x86_64-gtk4 \
     mingw-w64-clang-x86_64-libadwaita \
     mingw-w64-clang-x86_64-unzip \

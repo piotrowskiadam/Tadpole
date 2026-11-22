@@ -11,3 +11,7 @@ Default five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, 
 ### Domain docs
 
 Single-context layout (`GLOSSARY.md` at repo root + `docs/adr/`). See `docs/agents/domain.md`.
+
+### Verification & standards
+
+Run `scripts/check.sh` before committing or pushing (formatting, core tests, strict core Clippy, desktop check, version alignment, AppStream/desktop validation). For UI and architecture review rules, see `CODING_STANDARDS.md`.
