@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 pub struct Table {
     scrolled_window: gtk::ScrolledWindow,
+    column_view: gtk::ColumnView,
     list_store: gio::ListStore,
     filter_model: gtk::FilterListModel,
     selection_model: gtk::SingleSelection,
@@ -261,6 +262,7 @@ impl Table {
 
         Self {
             scrolled_window,
+            column_view,
             list_store,
             filter_model,
             selection_model,
@@ -420,6 +422,10 @@ impl Table {
     }
 
     pub fn select_url(&self, url: &str) {
+        let _ = self.select_url_and_reveal(url);
+    }
+
+    pub fn select_url_and_reveal(&self, url: &str) -> bool {
         let n = self.selection_model.n_items();
         for i in 0..n {
             if let Some(item) = self.selection_model.item(i) {
@@ -427,12 +433,19 @@ impl Table {
                     if let Some(res) = row_data.get_result() {
                         if res.url == url {
                             self.selection_model.set_selected(i);
-                            break;
+                            self.column_view.scroll_to(
+                                i,
+                                None,
+                                gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
+                                None,
+                            );
+                            return true;
                         }
                     }
                 }
             }
         }
+        false
     }
 
     pub fn export_to_csv(

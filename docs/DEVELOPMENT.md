@@ -57,6 +57,7 @@ Use the opt-in offline media mode for store screenshots and short frame recordin
 
 - `build_appimage.sh` stages the binary/desktop file/icon. It currently requires host GTK/Libadwaita; it is not a fully self-contained runtime bundle.
 - Snap uses the GNOME extension and core24 base. Chromium discovery and sandbox permissions must be tested separately; Chrome is not bundled.
+- A `v*` tag push builds and publishes the Snap to the stable channel using the `SNAPCRAFT_STORE_CREDENTIALS` GitHub Actions secret. To retry a release manually, run **Build and Release Packages** on the desired release tag and enable **Publish the built Snap to the Snap Store stable channel**. Verify the publish job and the Store channel after it completes.
 - Windows packaging uses MSYS2 CLANG64, the Rust gnullvm target and Inno Setup. Verify loader DLLs, schemas, icons and launcher behavior on a real Windows installation.
 - Keep Cargo.toml, snap version and installer AppVersion aligned when preparing a release. No package release is implied by a development PR.
 

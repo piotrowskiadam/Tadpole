@@ -1,6 +1,6 @@
 [package]
 name = "tadpole"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Tadpole — a local SEO crawler and site auditing tool"
 license = "MIT"
@@ -68,4 +68,8 @@ required-features = ["desktop"]
 
 [[example]]
 name = "discovery_preview"
+required-features = ["desktop"]
+
+[[example]]
+name = "issues_preview"
 required-features = ["desktop"]

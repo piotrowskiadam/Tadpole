@@ -2,6 +2,7 @@ mod detail_table;
 pub mod details;
 pub mod discovery;
 mod image_preview;
+pub mod issues;
 pub mod link_opportunities;
 pub mod media;
 pub mod row_data;

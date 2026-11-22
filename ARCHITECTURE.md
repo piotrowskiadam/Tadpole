@@ -12,11 +12,13 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 | `src/robots.rs` | Robots groups, agent specificity, longest-match Allow/Disallow and global sitemap declarations |
 | `src/sitemap.rs` | Bounded same-site XML/index/gzip ingestion with source provenance and failures |
 | `src/discovery.rs` | Reachability, sitemap reconciliation, coverage, project snapshot and CSV export |
+| `src/issues.rs` | GTK-independent unified Issues engine and pure exporters: 4-tier Severity grouping, 2xx-indexable gating, scope caveats, Rationale, Suggested Actions, per-URL Evidence, Markdown (25-URL inline sample cap) and uncapped CSV exports |
 | `src/ui/discovery.rs` | Native Sitemap & Discovery report, sources, filters and selected evidence |
+| `src/ui/issues.rs` | Native GNOME/Libadwaita `Issues` workspace, Severity summary, filters, detail pane, exports and cross-tab navigation |
 | `src/http.rs` | Response allocation limits, independent of Content-Length |
 | `src/markdown.rs` | HTML-to-Markdown conversion and extraction settings |
 | `src/filters.rs` | GTK-independent audit filters and duplicate indexes |
-| `src/project.rs` | Atomic project writes and stable Markdown filenames |
+| `src/project.rs` | `.tadpole` / legacy `.seocrawl` path resolution, atomic saves with document-portal fallback, open guard and stable Markdown filenames |
 | `src/ai.rs` | Bounded OpenRouter/OpenAI completions, response validation and page context |
 | `src/ui/window.rs` | Crawl workspace, preferences and GTK event handling |
 | `src/ui/table.rs`, `row_data.rs` | Virtualized results model, sorting, filtering, CSV/clipboard exports |
@@ -44,9 +46,9 @@ The discovery/event channels are unbounded channel types; the admitted URL count
 
 ## Project compatibility and secrets
 
-`.seocrawl` remains JSON with `seed_url`, `config`, `results`, `stats`, and an optional `discovery` snapshot. Older projects load without fabricated discovery evidence. An unfinished snapshot reopens as stopped, partial evidence. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
+`.tadpole` (and legacy `.seocrawl`) Projects remain JSON with `seed_url`, `config`, `results`, `stats`, and an optional `discovery` snapshot. Older projects load without fabricated discovery evidence. An unfinished snapshot reopens as stopped, partial evidence. Missing config fields use `CrawlConfig::default`, allowing older files to open. Loading reconstructs counters from unique result URLs and resets active/paused state. Session API credentials are retained when opening a project.
 
-Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` implementation. Old embedded keys are ignored when loading. They still exist in old files on disk until the owner removes them. Atomic saves write/sync a private temporary file beside the destination and replace it only after successful serialization. A compact format reduces file size without changing the schema.
+Credentials have `#[serde(skip)]` and config uses a custom redacted `Debug` implementation. Old embedded keys are ignored when loading. They still exist in old files on disk until the owner removes them. Atomic saves write/sync a private temporary file beside the destination and replace it only after successful serialization, with an in-memory serialized direct-write fallback when a sandbox document-portal mount forbids sibling temp files. `ensure_project_save_path` defaults saves to `.tadpole` while preserving exact XDG document-portal paths. `adw::Application` enables `HANDLES_OPEN` so OS double-click and CLI arguments route `.tadpole` and legacy `.seocrawl` files through the same active-crawl and replacement guard as the Open dialog. A compact format reduces file size without changing the schema.
 
 ## External providers
 
@@ -66,4 +68,10 @@ Sitemap collection is an owned future polled alongside the ordinary page workers
 
 Pure reconciliation runs off the GTK thread and distinguishes actual hyperlink inlinks, observed root paths, sitemap membership and page observations. An auxiliary result uses `UNKNOWN_DEPTH` until an observed path is recovered. It is never presented as depth zero. CSV and native filters use the same typed finding set, including overlapping findings and unknown observations. Effective mode/scope, limits, timestamps, source coverage and response destinations remain attached to the snapshot.
 
-The main notebook contains the complete Crawl Results workspace, Sitemap & Discovery and Link Opportunities. Each report owns its data-specific filters and evidence; the existing crawl sidebar/details/summary remain inside Crawl Results. Explicit linking handoff selects one target; analysis generations prevent cancelled/replaced runs from publishing stale results.
+The main notebook contains the complete **Crawl Results** workspace, **Issues**, **Sitemap & Discovery**, and **Link Opportunities**. Each report owns its data-specific filters and Evidence; the existing crawl sidebar/details/summary remain inside Crawl Results. Explicit linking handoff selects one target; analysis generations prevent cancelled/replaced runs from publishing stale results.
+
+## Unified Issues lifecycle
+
+`src/issues.rs` evaluates crawl observations and optional Sitemap & Discovery snapshots into grouped Issues across four fixed Severity tiers (`Critical`, `High`, `Medium`, `Low`), reporting transparent Severity counts and Affected URL percentages rather than a weighted 0–100 score (ADR-0001). Content, metadata, social, and structured-data rules are gated on 2xx indexable HTML pages so broken, redirected, or noindexed URLs do not create noisy lower-severity Issues. Scope caveats (stopped crawl, URL-limit cap, disabled or missing sitemaps) stay attached to the evaluated report.
+
+`src/issues.rs` also formats deterministic Markdown (with scope caveats, Severity summary, Rationale, Suggested Action, and a 25-URL inline sample cap) and uncapped CSV (`severity`, `issue`, `url`, `evidence`, `suggested_action`, `source`, `scope_caveats`) for either the full audit or a single selected Issue. `src/ui/issues.rs` recomputes lazily (throttled) only when the `Issues` tab is visible during live crawls, and always recomputes on crawl completion and Project load.

@@ -27,6 +27,11 @@ impl Drop for UiBusyGuard {
     }
 }
 
+const TAB_CRAWL_RESULTS: u32 = 0;
+const TAB_ISSUES: u32 = 1;
+const TAB_DISCOVERY: u32 = 2;
+const TAB_LINK_OPPORTUNITIES: u32 = 3;
+
 pub struct MainWindow {
     window: adw::ApplicationWindow,
     state: CrawlState,
@@ -36,6 +41,7 @@ pub struct MainWindow {
     table: Rc<Table>,
     details: Rc<Details>,
     summary_panel: Rc<crate::ui::summary::SummaryPanel>,
+    issues: Rc<crate::ui::issues::IssuesPanel>,
     link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
     discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
     visualizer_button: gtk::Button,
@@ -50,6 +56,8 @@ pub struct MainWindow {
     mode_dropdown: gtk::DropDown,
     edit_list_button: gtk::Button,
     loaded_list_urls: Rc<RefCell<Vec<String>>>,
+    ui_busy: Rc<std::cell::Cell<bool>>,
+    ui_crawl_active: Rc<std::cell::Cell<bool>>,
 }
 
 impl MainWindow {
@@ -106,13 +114,13 @@ impl MainWindow {
 
         let open_button = gtk::Button::builder()
             .icon_name("document-open-symbolic")
-            .tooltip_text("Open SEO Crawl Project")
+            .tooltip_text("Open Project")
             .build();
         header_bar.pack_start(&open_button);
 
         let save_button = gtk::Button::builder()
             .icon_name("document-save-symbolic")
-            .tooltip_text("Save SEO Crawl Project")
+            .tooltip_text("Save Project")
             .build();
         header_bar.pack_start(&save_button);
 
@@ -353,7 +361,10 @@ impl MainWindow {
             crate::ui::link_opportunities::LinkOpportunitiesPanel::new(state.clone()),
         );
 
+        let details = Rc::new(Details::new());
         right_paned.set_start_child(Some(&table_box));
+        right_paned.set_end_child(Some(details.widget()));
+
         main_notebook.append_page(&content_box, Some(&gtk::Label::new(Some("Crawl Results"))));
         let discovery = crate::ui::discovery::DiscoveryPanel::new(
             state.clone(),
@@ -363,7 +374,7 @@ impl MainWindow {
                 move |target| {
                     links.analyze_target(&target);
                     if let Some(notebook) = notebook.upgrade() {
-                        notebook.set_current_page(Some(2));
+                        notebook.set_current_page(Some(TAB_LINK_OPPORTUNITIES));
                     }
                 }
             },
@@ -378,6 +389,43 @@ impl MainWindow {
                 }
             },
         );
+        let issues = crate::ui::issues::IssuesPanel::new(state.clone(), {
+            let state = state.clone();
+            let table = table.clone();
+            let details = details.clone();
+            let sidebar = sidebar.clone();
+            let search = search_entry.clone();
+            let discovery = discovery.clone();
+            let notebook = main_notebook.downgrade();
+            move |url, kind, source| {
+                let in_crawl = state.get_result(&url).is_some();
+                let in_discovery = state
+                    .discovery()
+                    .is_some_and(|snapshot| snapshot.rows.iter().any(|row| row.url == url));
+                match crate::issues::jump_destination(source, in_crawl, in_discovery) {
+                    crate::issues::JumpDestination::CrawlResults => {
+                        if let Some(notebook) = notebook.upgrade() {
+                            notebook.set_current_page(Some(TAB_CRAWL_RESULTS));
+                        }
+                        if !table.select_url_and_reveal(&url) {
+                            sidebar.select_all();
+                            if !search.text().is_empty() {
+                                search.set_text("");
+                            }
+                            let _ = table.select_url_and_reveal(&url);
+                        }
+                        details.update(&url, &state);
+                    }
+                    crate::issues::JumpDestination::SitemapDiscovery => {
+                        if let Some(notebook) = notebook.upgrade() {
+                            notebook.set_current_page(Some(TAB_DISCOVERY));
+                        }
+                        let _ = discovery.select_url(&url, kind.discovery_finding());
+                    }
+                }
+            }
+        });
+        main_notebook.append_page(issues.widget(), Some(&gtk::Label::new(Some("Issues"))));
         main_notebook.append_page(
             discovery.widget(),
             Some(&gtk::Label::new(Some("Sitemap & Discovery"))),
@@ -386,9 +434,14 @@ impl MainWindow {
             link_opportunities.widget(),
             Some(&gtk::Label::new(Some("Link Opportunities (beta)"))),
         );
-
-        let details = Rc::new(Details::new());
-        right_paned.set_end_child(Some(details.widget()));
+        {
+            let issues = Rc::downgrade(&issues);
+            main_notebook.connect_switch_page(move |_, _, index| {
+                if let Some(issues) = issues.upgrade() {
+                    issues.set_tab_active(index == TAB_ISSUES);
+                }
+            });
+        }
 
         let sep = gtk::Separator::new(gtk::Orientation::Vertical);
         content_box.append(&sep);
@@ -438,6 +491,8 @@ impl MainWindow {
         status_bar.append(&status_label);
 
         let loaded_list_urls = Rc::new(RefCell::new(Vec::new()));
+        let ui_busy = Rc::new(std::cell::Cell::new(false));
+        let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
 
         let main_window = Self {
             window,
@@ -446,6 +501,7 @@ impl MainWindow {
             table,
             details,
             summary_panel,
+            issues,
             link_opportunities,
             discovery,
             visualizer_button,
@@ -457,6 +513,8 @@ impl MainWindow {
             mode_dropdown,
             edit_list_button,
             loaded_list_urls,
+            ui_busy,
+            ui_crawl_active,
         };
 
         let config = main_window.state.get_config();
@@ -494,6 +552,36 @@ impl MainWindow {
         self.window.present();
     }
 
+    pub fn show_status(&self, message: &str) {
+        self.status_label.set_text(message);
+    }
+
+    fn project_open_context(&self) -> ProjectOpenContext {
+        ProjectOpenContext {
+            window: self.window.clone(),
+            state: self.state.clone(),
+            ui_busy: self.ui_busy.clone(),
+            ui_crawl_active: self.ui_crawl_active.clone(),
+            start_button: self.start_button.clone(),
+            address_entry: self.address_entry.clone(),
+            table: self.table.clone(),
+            details: self.details.clone(),
+            sidebar: self.sidebar.clone(),
+            summary_panel: self.summary_panel.clone(),
+            mode_dropdown: self.mode_dropdown.clone(),
+            edit_list_button: self.edit_list_button.clone(),
+            loaded_list_urls: self.loaded_list_urls.clone(),
+            link_opportunities: self.link_opportunities.clone(),
+            discovery: self.discovery.clone(),
+            issues: self.issues.clone(),
+            status_label: self.status_label.clone(),
+        }
+    }
+
+    pub fn open_project_path(&self, path: std::path::PathBuf) {
+        open_project_with_guard(path, self.project_open_context());
+    }
+
     /// Explicit fixture setup for the isolated preview example. Uses the real
     /// start handler and report rather than injecting synthetic crawl results.
     pub fn preview_discovery_crawl(&self, seed: &str) {
@@ -507,7 +595,7 @@ impl MainWindow {
             .ancestor(gtk::Notebook::static_type())
             .and_downcast::<gtk::Notebook>()
         {
-            notebook.set_current_page(Some(1));
+            notebook.set_current_page(Some(TAB_DISCOVERY));
         }
     }
 
@@ -531,6 +619,7 @@ impl MainWindow {
         self.table.select_url("https://demo.example/");
         self.sidebar.update_counts(&self.state);
         self.summary_panel.update(&self.state);
+        self.issues.refresh();
         self.address_entry.set_text("https://demo.example/");
         self.address_entry.set_sensitive(false);
         self.start_button.set_sensitive(false);
@@ -557,8 +646,8 @@ impl MainWindow {
         filter_export_btn: gtk::Button,
     ) {
         let state = self.state.clone();
-        let ui_busy = Rc::new(std::cell::Cell::new(false));
-        let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
+        let ui_busy = self.ui_busy.clone();
+        let ui_crawl_active = self.ui_crawl_active.clone();
         let table = self.table.clone();
         let details = self.details.clone();
         let sidebar = self.sidebar.clone();
@@ -575,6 +664,7 @@ impl MainWindow {
         let loaded_list_urls = self.loaded_list_urls.clone();
         let link_opps = self.link_opportunities.clone();
         let discovery = self.discovery.clone();
+        let issues = self.issues.clone();
         let vis_button = self.visualizer_button.clone();
 
         // Create thread-safe Tokio channel
@@ -722,6 +812,7 @@ impl MainWindow {
                 let filters = gio::ListStore::new::<gtk::FileFilter>();
                 filters.append(&filter);
                 file_dialog.set_filters(Some(&filters));
+                file_dialog.set_default_filter(Some(&filter));
 
                 let text_view_inner = text_view_file.clone();
                 file_dialog.open(
@@ -1404,6 +1495,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let table_inner = table_filter_export.clone();
             let status_inner = status_label_filter_export.clone();
@@ -1455,6 +1547,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let table_inner = table_export.clone();
             let status_inner = status_label_csv.clone();
@@ -1540,14 +1633,17 @@ impl MainWindow {
         let status_save = status_label.clone();
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileDialog::new();
-            dialog.set_title("Save Crawl Project");
-            dialog.set_initial_name(Some("project.seocrawl"));
+            dialog.set_title("Save Project");
+            dialog.set_initial_name(Some(crate::project::DEFAULT_PROJECT_FILENAME));
             let filter = gtk::FileFilter::new();
-            filter.set_name(Some("SEO Crawl Files"));
-            filter.add_pattern("*.seocrawl");
+            filter.set_name(Some("Tadpole Projects"));
+            for pattern in crate::project::SAVE_FILTER_PATTERNS {
+                filter.add_pattern(pattern);
+            }
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let state_inner = state_save.clone();
             let status_inner = status_save.clone();
@@ -1558,7 +1654,8 @@ impl MainWindow {
                 None::<&gio::Cancellable>,
                 move |result| {
                     if let Ok(file) = result {
-                        if let Some(path) = file.path() {
+                        if let Some(raw_path) = file.path() {
+                            let path = crate::project::ensure_project_save_path(&raw_path);
                             if let Some(parent) = path.parent() {
                                 let mut config = state_inner.get_config();
                                 config.project_dir = Some(parent.to_string_lossy().to_string());
@@ -1597,122 +1694,34 @@ impl MainWindow {
         });
 
         // Open project click
-        let state_open = state.clone();
-        let parent_win_open = main_window_widget.clone();
-        let address_entry_open = address_entry.clone();
-        let table_open = table.clone();
-        let sidebar_open = sidebar.clone();
-        let summary_panel_open = summary_panel.clone();
-        let mode_dropdown_open = mode_dropdown.clone();
-        let edit_list_button_open = edit_list_button.clone();
-        let loaded_list_urls_open = loaded_list_urls.clone();
-        let link_opps_open = link_opps.clone();
-        let discovery_open = discovery.clone();
-        let status_label_open = status_label.clone();
-        let busy_open = ui_busy.clone();
-        let crawl_active_open = ui_crawl_active.clone();
-        let start_open = start_button.clone();
+        let open_ctx = self.project_open_context();
         open_button.connect_clicked(move |_| {
-            if busy_open.get() || crawl_active_open.get() { return; }
-            if state_open.is_crawling() { status_label_open.set_text("Stop the current crawl before opening a project."); return; }
+            if open_ctx.ui_busy.get() {
+                return;
+            }
+            if open_ctx.ui_crawl_active.get() || open_ctx.state.is_crawling() {
+                open_ctx
+                    .status_label
+                    .set_text("Stop the current crawl before opening a project.");
+                return;
+            }
             let dialog = gtk::FileDialog::new();
-            dialog.set_title("Open Crawl Project");
+            dialog.set_title("Open Project");
             let filter = gtk::FileFilter::new();
-            filter.set_name(Some("SEO Crawl Files"));
-            filter.add_pattern("*.seocrawl");
+            filter.set_name(Some("Tadpole Projects"));
+            for pattern in crate::project::OPEN_FILTER_PATTERNS {
+                filter.add_pattern(pattern);
+            }
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
-            let state_inner = state_open.clone();
-            let busy_inner = busy_open.clone();
-            let start_inner = start_open.clone();
-            let address_inner = address_entry_open.clone();
-            let table_inner = table_open.clone();
-            let sidebar_inner = sidebar_open.clone();
-            let summary_panel_inner = summary_panel_open.clone();
-            let mode_dropdown_inner = mode_dropdown_open.clone();
-            let edit_list_button_inner = edit_list_button_open.clone();
-            let loaded_list_urls_inner = loaded_list_urls_open.clone();
-            let link_opps_inner = link_opps_open.clone();
-            let discovery_inner = discovery_open.clone();
-            let status_label_inner = status_label_open.clone();
-
-            dialog.open(Some(&parent_win_open), None::<&gio::Cancellable>, move |result| {
+            let open_ctx_for_dialog = open_ctx.clone();
+            dialog.open(Some(&open_ctx.window), None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
-                        if state_inner.is_crawling() { status_label_inner.set_text("Stop the current crawl before opening a project."); return; }
-                        if busy_inner.get() { return; }
-                        let load_guard = UiBusyGuard::new(busy_inner.clone(), start_inner.clone());
-                        status_label_inner.set_text("Loading saved crawl project...");
-
-                        let state_bg = state_inner.clone();
-                        let address_bg = address_inner.clone();
-                        let table_bg = table_inner.clone();
-                        let sidebar_bg = sidebar_inner.clone();
-                        let summary_bg = summary_panel_inner.clone();
-                        let mode_dropdown_bg = mode_dropdown_inner.clone();
-                        let edit_list_bg = edit_list_button_inner.clone();
-                        let loaded_list_ref = loaded_list_urls_inner.clone();
-                        let link_opps_bg = link_opps_inner.clone();
-                        let discovery_bg = discovery_inner.clone();
-                        let status_label_bg = status_label_inner.clone();
-
-                        glib::MainContext::default().spawn_local(async move {
-                            let _load_guard = load_guard;
-                            let project_opt = tokio::task::spawn_blocking(move || {
-                                if let Ok(f) = std::fs::File::open(&path) {
-                                    let project_res: Result<crate::state::CrawlProject, _> = serde_json::from_reader(f);
-                                    project_res.ok()
-                                } else {
-                                    None
-                                }
-                            }).await.ok().flatten();
-
-                            if state_bg.is_crawling() { status_label_bg.set_text("Project not loaded because a crawl is running. Stop it and open the file again."); return; }
-                            if let Some(project) = project_opt {
-                                if let Err(e) = project.config.validate() { status_label_bg.set_text(&e); return; }
-                                address_bg.set_text(&project.seed_url);
-                                state_bg.load_project(project.clone());
-
-                                table_bg.clear();
-                                link_opps_bg.clear();
-
-                                let results = project.results.clone();
-                                let total = results.len();
-
-                                for (idx, res) in results.into_iter().enumerate() {
-                                    table_bg.add_or_update(res);
-                                    if idx % 50 == 0 {
-                                        status_label_bg.set_text(&format!("Loading rows {} / {}", idx, total));
-                                        glib::timeout_future(std::time::Duration::from_millis(1)).await;
-                                    }
-                                }
-
-                                sidebar_bg.update_counts(&state_bg);
-                                summary_bg.update(&state_bg);
-                                discovery_bg.refresh();
-
-                                let config = state_bg.get_config();
-                                let selected_idx = match config.crawl_mode {
-                                    CrawlMode::Crawl => 0,
-                                    CrawlMode::List => 1,
-                                    CrawlMode::Path => 2,
-                                    CrawlMode::Url => 3,
-                                };
-                                mode_dropdown_bg.set_selected(selected_idx);
-                                let is_list = config.crawl_mode == CrawlMode::List;
-                                address_bg.set_visible(!is_list);
-                                edit_list_bg.set_visible(is_list);
-                                if is_list {
-                                    let urls: Vec<String> = project.seed_url.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                                    *loaded_list_ref.borrow_mut() = urls;
-                                }
-                                status_label_bg.set_text(&format!("Loaded project with {} URLs.", total));
-                            } else {
-                                status_label_bg.set_text("Failed to open project file.");
-                            }
-                        });
+                        open_project_with_guard(path, open_ctx_for_dialog.clone());
                     }
                 }
             });
@@ -1739,6 +1748,7 @@ impl MainWindow {
         let busy_finish = ui_busy.clone();
         let crawl_active_finish = ui_crawl_active.clone();
         let discovery_finish = discovery.clone();
+        let issues_finish = issues.clone();
 
         glib::MainContext::default().spawn_local(async move {
             let mut last_refresh = std::time::Instant::now();
@@ -1749,6 +1759,7 @@ impl MainWindow {
                             discovery_finish.refresh();
                             last_refresh = std::time::Instant::now();
                         }
+                        issues_finish.notify_crawl_progress();
                     },
                     CrawlUpdate::Discovered(url) => {
                         status_label_clone.set_text(&format!("Discovered: {}", url));
@@ -1762,6 +1773,7 @@ impl MainWindow {
                             last_refresh = std::time::Instant::now();
                             glib::timeout_future(std::time::Duration::from_millis(1)).await;
                         }
+                        issues_finish.notify_crawl_progress();
 
                         let stats = state_clone.get_stats();
                         let now = std::time::Instant::now();
@@ -1867,6 +1879,7 @@ impl MainWindow {
                         summary_panel_clone.update(&state_clone);
                         table_clone.set_filter(table_clone.get_active_filter());
                         discovery_finish.refresh();
+                        issues_finish.refresh();
                         crawl_active_finish.set(false);
                     }
                 }
@@ -1887,6 +1900,7 @@ impl MainWindow {
         let loaded_list_urls_start = loaded_list_urls.clone();
         let link_opps_start = link_opps.clone();
         let discovery_start = discovery.clone();
+        let issues_start = issues.clone();
         let window_start = self.window.clone();
         let crawl_start_time_start = crawl_start_time.clone();
         let crawl_samples_start = crawl_samples.clone();
@@ -1940,6 +1954,7 @@ impl MainWindow {
                     let details_start = details_start.clone();
                     let link_opps_start = link_opps_start.clone();
                     let discovery_start = discovery_start.clone();
+                    let issues_start = issues_start.clone();
                     let sidebar_start = sidebar_start.clone();
                     let summary_panel_start = summary_panel_start.clone();
                     let pause_button_start = pause_button_start.clone();
@@ -1961,6 +1976,7 @@ impl MainWindow {
                         details_start.clear();
                         link_opps_start.clear();
                         discovery_start.refresh();
+                        issues_start.refresh();
                         sidebar_start.update_counts(&state_start);
                         summary_panel_start.update(&state_start);
 
@@ -2031,6 +2047,153 @@ impl MainWindow {
             }
         });
     }
+}
+
+#[derive(Clone)]
+struct ProjectOpenContext {
+    window: adw::ApplicationWindow,
+    state: CrawlState,
+    ui_busy: Rc<std::cell::Cell<bool>>,
+    ui_crawl_active: Rc<std::cell::Cell<bool>>,
+    start_button: gtk::Button,
+    address_entry: gtk::Entry,
+    table: Rc<Table>,
+    details: Rc<Details>,
+    sidebar: Rc<Sidebar>,
+    summary_panel: Rc<crate::ui::summary::SummaryPanel>,
+    mode_dropdown: gtk::DropDown,
+    edit_list_button: gtk::Button,
+    loaded_list_urls: Rc<RefCell<Vec<String>>>,
+    link_opportunities: Rc<crate::ui::link_opportunities::LinkOpportunitiesPanel>,
+    discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
+    issues: Rc<crate::ui::issues::IssuesPanel>,
+    status_label: gtk::Label,
+}
+
+fn open_project_with_guard(path: std::path::PathBuf, ctx: ProjectOpenContext) {
+    match crate::project::open_guard(
+        ctx.ui_crawl_active.get() || ctx.state.is_crawling(),
+        ctx.ui_busy.get(),
+        ctx.state.get_stats().crawled,
+    ) {
+        crate::project::OpenGuard::BlockedByActiveCrawl => {
+            if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+                ctx.status_label
+                    .set_text("Stop the current crawl before opening a project.");
+            }
+        }
+        crate::project::OpenGuard::ConfirmReplace { existing_urls } => {
+            let file_label = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("project");
+            let alert = adw::AlertDialog::new(
+                Some("Discard Current Crawl Results?"),
+                Some(&format!(
+                    "Opening \"{file_label}\" will permanently discard {existing_urls} crawled URLs and audit data."
+                )),
+            );
+            alert.add_response("cancel", "Cancel");
+            alert.add_response("discard", "Discard and Open");
+            alert.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+            alert.set_default_response(Some("cancel"));
+            alert.set_close_response("cancel");
+
+            let window = ctx.window.clone();
+            alert.choose(Some(&window), None::<&gio::Cancellable>, move |response| {
+                if response == "discard" {
+                    load_project_from_path(path, ctx);
+                }
+            });
+        }
+        crate::project::OpenGuard::Proceed => {
+            load_project_from_path(path, ctx);
+        }
+    }
+}
+
+fn load_project_from_path(path: std::path::PathBuf, ctx: ProjectOpenContext) {
+    if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+        ctx.status_label
+            .set_text("Stop the current crawl before opening a project.");
+        return;
+    }
+    if ctx.ui_busy.get() {
+        return;
+    }
+    let load_guard = UiBusyGuard::new(ctx.ui_busy.clone(), ctx.start_button.clone());
+    ctx.status_label.set_text("Loading saved project...");
+
+    glib::MainContext::default().spawn_local(async move {
+        let _load_guard = load_guard;
+        let load_result = tokio::task::spawn_blocking(move || crate::project::load(&path)).await;
+
+        if ctx.ui_crawl_active.get() || ctx.state.is_crawling() {
+            ctx.status_label.set_text(
+                "Project not loaded because a crawl is running. Stop it and open the file again.",
+            );
+            return;
+        }
+
+        match load_result {
+            Ok(Ok(project)) => {
+                ctx.address_entry.set_text(&project.seed_url);
+                ctx.state.load_project(project.clone());
+
+                ctx.table.clear();
+                ctx.details.clear();
+                ctx.link_opportunities.clear();
+
+                let results = project.results.clone();
+                let total = results.len();
+
+                for (idx, res) in results.into_iter().enumerate() {
+                    ctx.table.add_or_update(res);
+                    if idx % 50 == 0 {
+                        ctx.status_label
+                            .set_text(&format!("Loading rows {} / {}", idx, total));
+                        glib::timeout_future(std::time::Duration::from_millis(1)).await;
+                    }
+                }
+
+                ctx.sidebar.update_counts(&ctx.state);
+                ctx.summary_panel.update(&ctx.state);
+                ctx.discovery.refresh();
+                ctx.issues.refresh();
+
+                let config = ctx.state.get_config();
+                let selected_idx = match config.crawl_mode {
+                    CrawlMode::Crawl => 0,
+                    CrawlMode::List => 1,
+                    CrawlMode::Path => 2,
+                    CrawlMode::Url => 3,
+                };
+                ctx.mode_dropdown.set_selected(selected_idx);
+                let is_list = config.crawl_mode == CrawlMode::List;
+                ctx.address_entry.set_visible(!is_list);
+                ctx.edit_list_button.set_visible(is_list);
+                if is_list {
+                    let urls: Vec<String> = project
+                        .seed_url
+                        .lines()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    *ctx.loaded_list_urls.borrow_mut() = urls;
+                }
+                ctx.status_label
+                    .set_text(&format!("Loaded project with {} URLs.", total));
+            }
+            Ok(Err(e)) => {
+                ctx.status_label
+                    .set_text(&format!("Failed to open project file: {e}"));
+            }
+            Err(e) => {
+                ctx.status_label
+                    .set_text(&format!("Failed to open project file: {e}"));
+            }
+        }
+    });
 }
 
 async fn fetch_openrouter_models() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>>
