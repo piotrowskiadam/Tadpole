@@ -30,6 +30,8 @@ fn plain_paragraph(value: &str) -> gtk::Label {
     let widget = label(value, "");
     widget.set_wrap(true);
     widget.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    widget.set_width_chars(28);
+    widget.set_xalign(0.0);
     widget.set_selectable(true);
     widget
 }
@@ -336,6 +338,7 @@ impl IssuesPanel {
 
         // Right Pane: Selected Issue Detail + Virtualized Affected URLs Table
         let right_root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        right_root.set_width_request(420);
         right_root.set_vexpand(true);
         right_root.set_hexpand(true);
 
@@ -369,6 +372,7 @@ impl IssuesPanel {
         let detail_title = label("", "title-2");
         detail_title.set_wrap(true);
         detail_title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+        detail_title.set_width_chars(20);
         detail_title.set_selectable(true);
         detail_title.set_hexpand(true);
         title_badge_row.append(&detail_title);
@@ -491,8 +495,12 @@ impl IssuesPanel {
         selected_url_bar.set_visible(false);
         let selected_url_label = plain_paragraph("");
         selected_url_label.add_css_class("bold");
+        selected_url_label.set_lines(2);
+        selected_url_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         let selected_evidence_label = plain_paragraph("");
         selected_evidence_label.add_css_class("dim-label");
+        selected_evidence_label.set_lines(2);
+        selected_evidence_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         selected_url_bar.append(&selected_url_label);
         selected_url_bar.append(&selected_evidence_label);
         detail_content.append(&selected_url_bar);

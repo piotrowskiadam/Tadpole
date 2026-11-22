@@ -8,6 +8,7 @@ Judgement-call rules enforced during `/code-review`. Mechanical checks (formatti
 - **Plain text for crawled and external data**: Never render crawled HTML metadata, URLs, API responses, or AI output as GTK/Pango markup. Keep user-facing values as selectable plain text.
 - **Native GNOME HIG**: Use Libadwaita semantic colors and native controls (`DESIGN.md`). Avoid custom fixed hex palettes or web-style chrome in desktop widgets.
 - **No blocking on the GTK main thread**: Keep file I/O, project serialization, CSV/Markdown exports, and HTTP/crawl work off the main thread.
+- **Wrapping labels in non-scrolled layouts**: Always pair `set_wrap(true)` on `gtk::Label` with `set_width_chars(...)` (e.g. `20`–`32`) inside boxes/grids/notebook pages so GTK4 height-for-width measurement does not inflate window minimum height off-screen.
 
 ## Documentation & Domain Integrity
 

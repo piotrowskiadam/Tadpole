@@ -23,6 +23,7 @@ fn paragraph(value: &str) -> gtk::Label {
     let label = text(value, "");
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    label.set_width_chars(24);
     label.set_selectable(true);
     label
 }
@@ -131,6 +132,7 @@ impl DiscoveryPanel {
         widget.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let totals = text("", "dim-label");
         totals.set_wrap(true);
+        totals.set_width_chars(28);
         totals.set_margin_start(14);
         totals.set_margin_top(8);
         totals.set_margin_bottom(8);
