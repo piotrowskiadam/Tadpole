@@ -811,6 +811,7 @@ impl MainWindow {
                 let filters = gio::ListStore::new::<gtk::FileFilter>();
                 filters.append(&filter);
                 file_dialog.set_filters(Some(&filters));
+                file_dialog.set_default_filter(Some(&filter));
 
                 let text_view_inner = text_view_file.clone();
                 file_dialog.open(
@@ -1493,6 +1494,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let table_inner = table_filter_export.clone();
             let status_inner = status_label_filter_export.clone();
@@ -1544,6 +1546,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let table_inner = table_export.clone();
             let status_inner = status_label_csv.clone();
@@ -1639,6 +1642,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let state_inner = state_save.clone();
             let status_inner = status_save.clone();
@@ -1724,6 +1728,7 @@ impl MainWindow {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             dialog.set_filters(Some(&filters));
+            dialog.set_default_filter(Some(&filter));
 
             let open_ctx = ProjectOpenContext {
                 window: parent_win_open.clone(),

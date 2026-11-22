@@ -49,7 +49,7 @@ cp tadpolelogonobg.png "$DIST_DIR/"
 
 # Copy all required DLL dependencies from MSYS2 CLANG64
 echo "=== Resolving and copying DLL dependencies ==="
-dependencies=$(ldd target/x86_64-pc-windows-gnullvm/release/tadpole.exe | grep /clang64/bin | awk '{print $3}')
+dependencies=$(ldd target/x86_64-pc-windows-gnullvm/release/tadpole.exe | grep /clang64/bin | awk '{print $3}' | sort -u)
 for dll in $dependencies; do
     cp "$dll" "$DIST_DIR/"
 done
@@ -67,8 +67,12 @@ fi
 echo "=== Copying GSettings schemas ==="
 SCHEMA_DIR="$DIST_DIR/share/glib-2.0/schemas"
 mkdir -p "$SCHEMA_DIR"
+cp /clang64/share/glib-2.0/schemas/org.gtk.gtk4.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
 cp /clang64/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml "$SCHEMA_DIR/" 2>/dev/null || true
 cp /clang64/share/glib-2.0/schemas/gschemas.compiled "$SCHEMA_DIR/" 2>/dev/null || true
+if [ ! -f "$SCHEMA_DIR/gschemas.compiled" ] && command -v glib-compile-schemas &> /dev/null; then
+    glib-compile-schemas "$SCHEMA_DIR"
+fi
 
 # Copy icon themes (Adwaita and hicolor)
 echo "=== Copying icon themes ==="
@@ -87,7 +91,7 @@ gdk-pixbuf-query-loaders | sed 's|[^"]*/lib/gdk-pixbuf-2.0/2.10.0/||g' > "$DIST_
 
 # Copy dynamic dependency DLLs for loaders (like librsvg-2-2.dll etc.)
 echo "=== Resolving and copying loader DLL dependencies ==="
-loader_deps=$(ldd /clang64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /clang64/bin | awk '{print $3}')
+loader_deps=$(ldd /clang64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll | grep /clang64/bin | awk '{print $3}' | sort -u)
 for dll in $loader_deps; do
     cp -n "$dll" "$DIST_DIR/"
 done

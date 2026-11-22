@@ -294,6 +294,7 @@ impl LinkOpportunitiesPanel {
 
             let file_dialog = gtk::FileDialog::new();
             file_dialog.set_title("Export Link Opportunities to CSV");
+            file_dialog.set_initial_name(Some("tadpole_link_opportunities.csv"));
 
             let filter = gtk::FileFilter::new();
             filter.set_name(Some("CSV Files"));
@@ -301,6 +302,7 @@ impl LinkOpportunitiesPanel {
             let filters = gio::ListStore::new::<gtk::FileFilter>();
             filters.append(&filter);
             file_dialog.set_filters(Some(&filters));
+            file_dialog.set_default_filter(Some(&filter));
 
             let opp_store_inner = opp_store_for_export.clone();
             file_dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
