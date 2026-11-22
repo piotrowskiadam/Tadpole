@@ -8,6 +8,10 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::Write as _;
+
+/// Maximum number of sample Affected URLs rendered inline per Issue in Markdown exports.
+pub const MARKDOWN_SAMPLE_URL_LIMIT: usize = 25;
 
 /// Four fixed Severity tiers expressing contextual audit guidance for
 /// prioritization rather than a guaranteed traffic or ranking impact.
@@ -1052,4 +1056,238 @@ fn collect_scope_caveats(
     }
 
     caveats
+}
+
+/// Export a deterministic, developer-ready Markdown report for all active (non-zero) Issues.
+pub fn export_markdown(report: &IssueReport) -> String {
+    let active: Vec<&Issue> = report.active_issues().collect();
+    render_markdown_document(report, "# Tadpole SEO Issues Report", &active, false)
+}
+
+/// Export a deterministic, developer-ready Markdown report for a single selected Issue,
+/// preserving crawl-scope caveats and Severity summary context from `report`.
+pub fn export_issue_markdown(report: &IssueReport, issue: &Issue) -> String {
+    let heading = format!("# Tadpole SEO Issue: {}", issue.name);
+    render_markdown_document(report, &heading, &[issue], true)
+}
+
+/// Write all active (non-zero) Issues and every Affected URL (uncapped) as RFC-4180 CSV.
+pub fn write_csv(writer: impl std::io::Write, report: &IssueReport) -> Result<(), csv::Error> {
+    let active: Vec<&Issue> = report.active_issues().collect();
+    write_issues_csv(writer, report, &active)
+}
+
+/// Export all active (non-zero) Issues and every Affected URL (uncapped) as an RFC-4180 CSV string.
+pub fn export_csv(report: &IssueReport) -> Result<String, csv::Error> {
+    let mut buf = Vec::new();
+    write_csv(&mut buf, report)?;
+    Ok(String::from_utf8(buf).expect("CSV writer emits valid UTF-8"))
+}
+
+/// Write a single selected Issue and every Affected URL (uncapped) as RFC-4180 CSV,
+/// preserving crawl-scope caveat context from `report`.
+pub fn write_issue_csv(
+    writer: impl std::io::Write,
+    report: &IssueReport,
+    issue: &Issue,
+) -> Result<(), csv::Error> {
+    write_issues_csv(writer, report, &[issue])
+}
+
+/// Export a single selected Issue and every Affected URL (uncapped) as an RFC-4180 CSV string,
+/// preserving crawl-scope caveat context from `report`.
+pub fn export_issue_csv(report: &IssueReport, issue: &Issue) -> Result<String, csv::Error> {
+    let mut buf = Vec::new();
+    write_issue_csv(&mut buf, report, issue)?;
+    Ok(String::from_utf8(buf).expect("CSV writer emits valid UTF-8"))
+}
+
+fn write_issues_csv(
+    writer: impl std::io::Write,
+    report: &IssueReport,
+    issues: &[&Issue],
+) -> Result<(), csv::Error> {
+    let mut csv = csv::Writer::from_writer(writer);
+    csv.write_record([
+        "severity",
+        "issue",
+        "url",
+        "evidence",
+        "suggested_action",
+        "source",
+        "scope_caveats",
+    ])?;
+
+    let scope_caveats = report
+        .caveats
+        .iter()
+        .map(|caveat| caveat.message.as_str())
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    for issue in issues {
+        for affected in &issue.affected_urls {
+            csv.write_record([
+                issue.severity.label(),
+                issue.name.as_str(),
+                affected.url.as_str(),
+                affected.evidence.as_str(),
+                issue.suggested_action.as_str(),
+                issue.source.label(),
+                scope_caveats.as_str(),
+            ])?;
+        }
+    }
+
+    csv.flush()?;
+    Ok(())
+}
+
+fn render_markdown_document(
+    report: &IssueReport,
+    heading: &str,
+    issues: &[&Issue],
+    single_issue_mode: bool,
+) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "{heading}\n");
+    let _ = writeln!(
+        out,
+        "**Audit scope:** {} crawled URLs ({} indexable HTML) · {} observed URLs\n",
+        report.crawled_urls, report.indexable_html_urls, report.observed_urls
+    );
+
+    if !report.caveats.is_empty() {
+        let _ = writeln!(out, "> **Scope Caveats**");
+        for caveat in &report.caveats {
+            let _ = writeln!(out, "> - {}", sanitize_single_line(&caveat.message));
+        }
+        out.push('\n');
+    }
+
+    let _ = writeln!(out, "## Severity Summary\n");
+    let _ = writeln!(
+        out,
+        "| Severity | Active Issues | Affected URLs | % of Crawled URLs |"
+    );
+    let _ = writeln!(out, "| --- | ---: | ---: | ---: |");
+    for severity in Severity::ALL {
+        let mut active_count = 0usize;
+        let mut unique_urls: BTreeSet<&str> = BTreeSet::new();
+        for issue in issues {
+            if issue.severity == severity && issue.is_active() {
+                active_count += 1;
+                for affected in &issue.affected_urls {
+                    unique_urls.insert(affected.url.as_str());
+                }
+            }
+        }
+        let affected_count = unique_urls.len();
+        let pct = percentage_of_crawled(affected_count, report.crawled_urls);
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {:.1}% |",
+            severity.label(),
+            active_count,
+            affected_count,
+            pct
+        );
+    }
+    out.push('\n');
+
+    if !single_issue_mode {
+        let _ = writeln!(out, "## Active Issues\n");
+        if issues.is_empty() {
+            let _ = writeln!(out, "_No active Issues found in this audit._");
+            return out;
+        }
+    }
+
+    for (idx, issue) in issues.iter().enumerate() {
+        if idx > 0 {
+            out.push('\n');
+        }
+        write_markdown_issue_section(&mut out, issue);
+    }
+
+    out
+}
+
+fn write_markdown_issue_section(out: &mut String, issue: &Issue) {
+    let url_word = if issue.affected_count == 1 {
+        "Affected URL"
+    } else {
+        "Affected URLs"
+    };
+    let _ = writeln!(
+        out,
+        "### [{}] {} ({} {}, {:.1}%)\n",
+        issue.severity.label(),
+        issue.name,
+        issue.affected_count,
+        url_word,
+        issue.affected_percentage
+    );
+    let _ = writeln!(out, "- **Severity:** {}", issue.severity.label());
+    let _ = writeln!(out, "- **Source:** {}", issue.source.label());
+    let _ = writeln!(
+        out,
+        "- **Affected URLs:** {} ({:.1}% of crawled URLs)",
+        issue.affected_count, issue.affected_percentage
+    );
+    let _ = writeln!(out, "- **Rationale:** {}", issue.rationale);
+    let _ = writeln!(out, "- **Suggested Action:** {}\n", issue.suggested_action);
+
+    if issue.affected_urls.is_empty() {
+        let _ = writeln!(out, "_No Affected URLs._");
+        return;
+    }
+
+    let _ = writeln!(out, "| Affected URL | Evidence |");
+    let _ = writeln!(out, "| --- | --- |");
+    let shown = issue.affected_urls.len().min(MARKDOWN_SAMPLE_URL_LIMIT);
+    for affected in issue.affected_urls.iter().take(shown) {
+        let _ = writeln!(
+            out,
+            "| {} | {} |",
+            format_markdown_code_cell(&affected.url),
+            escape_markdown_table_cell(&affected.evidence)
+        );
+    }
+
+    if issue.affected_urls.len() > MARKDOWN_SAMPLE_URL_LIMIT {
+        let remaining = issue.affected_urls.len() - MARKDOWN_SAMPLE_URL_LIMIT;
+        let _ = writeln!(
+            out,
+            "\n> Showing {} of {} Affected URLs ({} more omitted). Export to CSV for the complete uncapped list.",
+            MARKDOWN_SAMPLE_URL_LIMIT,
+            issue.affected_urls.len(),
+            remaining
+        );
+    }
+}
+
+fn percentage_of_crawled(count: usize, crawled_urls: usize) -> f64 {
+    if crawled_urls == 0 {
+        0.0
+    } else {
+        (count as f64 / crawled_urls as f64) * 100.0
+    }
+}
+
+fn sanitize_single_line(text: &str) -> String {
+    text.replace("\r\n", " ").replace(['\r', '\n'], " ")
+}
+
+fn escape_markdown_table_cell(text: &str) -> String {
+    sanitize_single_line(text).replace('|', "\\|")
+}
+
+fn format_markdown_code_cell(text: &str) -> String {
+    let escaped = escape_markdown_table_cell(text);
+    if escaped.contains('`') {
+        format!("`` {escaped} ``")
+    } else {
+        format!("`{escaped}`")
+    }
 }

@@ -3,8 +3,9 @@ use tadpole::{
     discovery::{DiscoverySnapshot, ResponseEvidence, SitemapSource, UNKNOWN_DEPTH, reconcile},
     filters::{CrawlFilter, DuplicateIndex},
     issues::{
-        IssueKind, IssueSource, ScopeCaveatKind, Severity, evaluate, evaluate_project,
-        evaluate_state,
+        IssueKind, IssueSource, MARKDOWN_SAMPLE_URL_LIMIT, ScopeCaveatKind, Severity, evaluate,
+        evaluate_project, evaluate_state, export_csv, export_issue_csv, export_issue_markdown,
+        export_markdown,
     },
     state::{CrawlConfig, CrawlProject, CrawlResult, CrawlState, CrawlStats, ImageInfo},
 };
@@ -877,4 +878,257 @@ async fn loopback_http_crawl_unifies_all_severities_gating_overlaps_and_capped_c
     );
 
     server.abort();
+}
+
+#[test]
+fn export_markdown_renders_scope_caveats_severity_summary_and_active_issues_omitting_zero_count() {
+    let healthy = indexable_page("https://example.com/");
+
+    let mut not_found = CrawlResult::new_failed(
+        "https://example.com/missing".into(),
+        Some(404),
+        Some("404 Not Found".into()),
+        "Non-200 Status Code".into(),
+        1,
+        12,
+    );
+    not_found.canonical = Some("https://example.com/missing".into());
+
+    let mut missing_title = indexable_page("https://example.com/no-title");
+    missing_title.title = None;
+    missing_title.meta_desc = Some("x".repeat(170));
+
+    let config = CrawlConfig {
+        max_urls: 3,
+        ..Default::default()
+    };
+    let report = evaluate(&[healthy, not_found, missing_title], None, Some(&config));
+
+    let md = export_markdown(&report);
+    // Deterministic output
+    assert_eq!(md, export_markdown(&report));
+
+    // Scope caveats header present (missing sitemap discovery + URL limit reached)
+    assert!(md.contains("Scope Caveats"), "expected Scope Caveats header:\n{md}");
+    assert!(md.contains("No sitemap discovery evidence is available"));
+    assert!(md.contains("configured URL limit (3 URLs)"));
+
+    // Severity summary table with all 4 fixed tiers and percentages, no health score (ADR-0001)
+    assert!(md.contains("## Severity Summary"));
+    assert!(md.contains("| Critical | 1 | 1 | 33.3% |"), "md was:\n{md}");
+    assert!(md.contains("| High | 1 | 1 | 33.3% |"), "md was:\n{md}");
+    assert!(md.contains("| Medium | 0 | 0 | 0.0% |"), "md was:\n{md}");
+    assert!(md.contains("| Low | 1 | 1 | 33.3% |"), "md was:\n{md}");
+    assert!(!md.to_lowercase().contains("health score"));
+
+    // Active Issues appear in Severity order with Rationale, Suggested Action, Affected URL, and Evidence
+    let critical_pos = md.find("Client Error (4xx)").expect("ClientError4xx missing");
+    let high_pos = md.find("Missing Title").expect("MissingTitle missing");
+    let low_pos = md
+        .find("Description > 155 chars")
+        .expect("DescriptionTooLong missing");
+    assert!(critical_pos < high_pos && high_pos < low_pos);
+
+    assert!(md.contains(IssueKind::ClientError4xx.rationale()));
+    assert!(md.contains(IssueKind::ClientError4xx.suggested_action()));
+    assert!(md.contains("https://example.com/missing"));
+    assert!(md.contains("HTTP 404 (404 Not Found)"));
+
+    assert!(md.contains(IssueKind::MissingTitle.rationale()));
+    assert!(md.contains(IssueKind::MissingTitle.suggested_action()));
+    assert!(md.contains("https://example.com/no-title"));
+
+    // Zero-count Issues are omitted from active export
+    assert!(!md.contains("Server Error (5xx)"));
+    assert!(!md.contains("Missing H1"));
+}
+
+#[test]
+fn export_markdown_and_single_issue_markdown_cap_inline_urls_at_25_with_csv_truncation_note() {
+    assert_eq!(MARKDOWN_SAMPLE_URL_LIMIT, 25);
+
+    // 32 indexable pages missing a title + 1 broken 404 page
+    let mut results: Vec<CrawlResult> = (1..=32)
+        .map(|i| {
+            let mut page = indexable_page(&format!("https://example.com/page-{i:02}"));
+            page.title = None;
+            page
+        })
+        .collect();
+    let mut broken = CrawlResult::new_failed(
+        "https://example.com/broken".into(),
+        Some(404),
+        Some("404 Not Found".into()),
+        "Non-200 Status Code".into(),
+        1,
+        10,
+    );
+    broken.canonical = Some("https://example.com/broken".into());
+    results.push(broken);
+
+    let report = evaluate(&results, None, None);
+    let missing_title = report.issue(IssueKind::MissingTitle).unwrap();
+    assert_eq!(missing_title.affected_count, 32);
+
+    // Full Markdown export caps MissingTitle at 25 inline rows with truncation note pointing to CSV.
+    let full_md = export_markdown(&report);
+    assert!(full_md.contains("https://example.com/page-01"));
+    assert!(full_md.contains("https://example.com/page-25"));
+    assert!(!full_md.contains("https://example.com/page-26"));
+    assert!(!full_md.contains("https://example.com/page-32"));
+    assert!(full_md.contains("Showing 25 of 32 Affected URLs (7 more omitted). Export to CSV"));
+
+    // Single selected Issue Markdown export includes only MissingTitle, preserves scope caveats,
+    // includes Severity summary table, and applies the same 25-URL cap + CSV truncation note.
+    let single_md = export_issue_markdown(&report, missing_title);
+    assert_eq!(single_md, export_issue_markdown(&report, missing_title));
+    assert!(single_md.contains("Scope Caveats"));
+    assert!(single_md.contains("## Severity Summary"));
+    assert!(single_md.contains("Missing Title"));
+    assert!(single_md.contains(IssueKind::MissingTitle.rationale()));
+    assert!(single_md.contains(IssueKind::MissingTitle.suggested_action()));
+    assert!(single_md.contains("https://example.com/page-01"));
+    assert!(single_md.contains("https://example.com/page-25"));
+    assert!(!single_md.contains("https://example.com/page-26"));
+    assert!(single_md.contains("Showing 25 of 32 Affected URLs (7 more omitted). Export to CSV"));
+    // Unselected Issue must not appear in single-Issue export.
+    assert!(!single_md.contains("Client Error (4xx)"));
+    assert!(!single_md.contains("https://example.com/broken"));
+
+    // Exact boundary of 25 URLs must NOT emit a truncation note, and clean crawl with no caveats omits Scope Caveats.
+    let exact_25: Vec<CrawlResult> = (1..=25)
+        .map(|i| {
+            let mut page = indexable_page(&format!("https://example.com/exact-{i:02}"));
+            page.title = None;
+            page
+        })
+        .collect();
+    let config = CrawlConfig::default();
+    let mut snapshot = DiscoverySnapshot::new(vec!["https://example.com/exact-01".into()], &config);
+    snapshot.coverage.finished = true;
+    snapshot.collection.sources.push(SitemapSource {
+        url: "https://example.com/sitemap.xml".into(),
+        parent: None,
+        status: "200".into(),
+        url_count: 25,
+        error: None,
+        is_index: Some(false),
+    });
+    for i in 1..=25 {
+        snapshot.collection.memberships.insert(
+            format!("https://example.com/exact-{i:02}"),
+            ["https://example.com/sitemap.xml".into()].into(),
+        );
+    }
+    let exact_report = evaluate(&exact_25, Some(&snapshot), Some(&config));
+    assert!(exact_report.caveats.is_empty());
+    let exact_issue = exact_report.issue(IssueKind::MissingTitle).unwrap();
+    let exact_md = export_issue_markdown(&exact_report, exact_issue);
+    assert!(!exact_md.contains("Scope Caveats"));
+    assert!(exact_md.contains("https://example.com/exact-25"));
+    assert!(!exact_md.contains("omitted"));
+    assert!(!exact_md.contains("Export to CSV"));
+}
+
+#[test]
+fn export_csv_and_single_issue_csv_are_uncapped_omit_zero_count_preserve_caveats_and_escape_rfc4180() {
+    // 30 pages missing a title (exceeds Markdown's 25-URL cap) + 1 page with commas, quotes, and newlines in Evidence.
+    let mut results: Vec<CrawlResult> = (1..=30)
+        .map(|i| {
+            let mut page = indexable_page(&format!("https://example.com/item-{i:02}"));
+            page.title = None;
+            page
+        })
+        .collect();
+
+    let mut tricky = indexable_page("https://example.com/tricky,page");
+    tricky.schema_errors = vec!["Expected \"@type\", found comma, and\nnewline".into()];
+    results.push(tricky);
+
+    let config = CrawlConfig {
+        max_urls: 31,
+        ..Default::default()
+    };
+    let report = evaluate(&results, None, Some(&config));
+    assert!(report.has_caveat(ScopeCaveatKind::MissingSitemapDiscovery));
+    assert!(report.has_caveat(ScopeCaveatKind::UrlLimitReached));
+
+    // Full active Issues CSV
+    let full_csv = export_csv(&report).expect("export_csv should succeed");
+    assert_eq!(full_csv, export_csv(&report).unwrap());
+
+    // Raw CSV must quote fields containing commas, quotes, or newlines per RFC-4180.
+    assert!(full_csv.contains("\"https://example.com/tricky,page\""));
+    assert!(full_csv.contains("\"\"@type\"\""));
+
+    let mut reader = csv::Reader::from_reader(full_csv.as_bytes());
+    let headers: Vec<String> = reader
+        .headers()
+        .unwrap()
+        .iter()
+        .map(ToOwned::to_owned)
+        .collect();
+    assert_eq!(
+        headers,
+        vec![
+            "severity",
+            "issue",
+            "url",
+            "evidence",
+            "suggested_action",
+            "source",
+            "scope_caveats",
+        ]
+    );
+
+    let rows: Vec<csv::StringRecord> = reader.records().map(|r| r.unwrap()).collect();
+    // 30 MissingTitle rows + 1 StructuredDataErrors row = 31 rows (uncapped, zero-count Issues omitted).
+    assert_eq!(rows.len(), 31);
+
+    let missing_title_rows: Vec<&csv::StringRecord> = rows
+        .iter()
+        .filter(|r| &r[1] == IssueKind::MissingTitle.name())
+        .collect();
+    assert_eq!(missing_title_rows.len(), 30);
+    assert_eq!(&missing_title_rows[0][0], "High");
+    assert_eq!(&missing_title_rows[0][2], "https://example.com/item-01");
+    assert_eq!(&missing_title_rows[29][2], "https://example.com/item-30");
+    assert_eq!(&missing_title_rows[0][5], "Crawl Results");
+    assert!(missing_title_rows[0][6].contains("No sitemap discovery evidence is available"));
+    assert!(missing_title_rows[0][6].contains("configured URL limit (31 URLs)"));
+
+    // Verify RFC-4180 round-trip of comma, double-quote, and newline characters.
+    let schema_row = rows
+        .iter()
+        .find(|r| &r[1] == IssueKind::StructuredDataErrors.name())
+        .expect("StructuredDataErrors row missing");
+    assert_eq!(&schema_row[0], "High");
+    assert_eq!(&schema_row[2], "https://example.com/tricky,page");
+    assert!(schema_row[3].contains("Expected \"@type\", found comma, and\nnewline"));
+    assert_eq!(&schema_row[4], IssueKind::StructuredDataErrors.suggested_action());
+    assert_eq!(&schema_row[5], "Crawl Results");
+
+    // Zero-count Issues must not appear in full CSV.
+    assert!(!rows.iter().any(|r| &r[1] == IssueKind::ServerError5xx.name()));
+
+    // Single selected Issue CSV (MissingTitle only -> 30 uncapped rows, preserves scope caveats).
+    let missing_title = report.issue(IssueKind::MissingTitle).unwrap();
+    let single_csv = export_issue_csv(&report, missing_title).expect("export_issue_csv should succeed");
+    let mut single_reader = csv::Reader::from_reader(single_csv.as_bytes());
+    let single_rows: Vec<csv::StringRecord> = single_reader.records().map(|r| r.unwrap()).collect();
+    assert_eq!(single_rows.len(), 30);
+    assert!(
+        single_rows
+            .iter()
+            .all(|r| &r[1] == IssueKind::MissingTitle.name())
+    );
+    assert!(single_rows[0][6].contains("configured URL limit (31 URLs)"));
+
+    // Empty active-Issues report produces header-only CSV and clean Markdown empty state.
+    let clean = evaluate(&[indexable_page("https://example.com/clean")], None, None);
+    let empty_csv = export_csv(&clean).unwrap();
+    let mut empty_reader = csv::Reader::from_reader(empty_csv.as_bytes());
+    assert_eq!(empty_reader.records().count(), 0);
+    let empty_md = export_markdown(&clean);
+    assert!(empty_md.contains("No active Issues found"));
 }
