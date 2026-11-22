@@ -15,6 +15,7 @@ pub struct Sidebar {
     container: gtk::Box,
     rows: Rc<RefCell<Vec<SidebarRow>>>,
     list_boxes: Rc<RefCell<Vec<gtk::ListBox>>>,
+    filter_positions: Rc<RefCell<Vec<(CrawlFilter, usize, i32)>>>,
 }
 
 impl Sidebar {
@@ -24,6 +25,7 @@ impl Sidebar {
     {
         let container = gtk::Box::new(gtk::Orientation::Vertical, 10);
         container.set_width_request(240);
+        container.set_vexpand(true);
 
         // Sidebar title styled like a header
         let title_label = gtk::Label::new(Some("SEO Audit Filters"));
@@ -35,6 +37,9 @@ impl Sidebar {
         container.append(&title_label);
 
         let scrolled = gtk::ScrolledWindow::new();
+        scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scrolled.set_propagate_natural_height(false);
+        scrolled.set_min_content_height(120);
         scrolled.set_vexpand(true);
         container.append(&scrolled);
 
@@ -109,9 +114,10 @@ impl Sidebar {
 
         let rows = Rc::new(RefCell::new(Vec::new()));
         let list_boxes = Rc::new(RefCell::new(Vec::new()));
+        let filter_positions = Rc::new(RefCell::new(Vec::new()));
         let on_filter_changed = Rc::new(on_filter_changed);
 
-        for cat in categories {
+        for (cat_idx, cat) in categories.into_iter().enumerate() {
             // Category header
             let cat_label = gtk::Label::builder()
                 .label(cat.name)
@@ -136,7 +142,7 @@ impl Sidebar {
 
             let list_box_rows = Rc::new(RefCell::new(Vec::new()));
 
-            for filter in cat.filters {
+            for (row_idx, filter) in cat.filters.into_iter().enumerate() {
                 let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 10);
                 row_box.set_margin_start(10);
                 row_box.set_margin_end(10);
@@ -163,6 +169,9 @@ impl Sidebar {
                 };
                 list_box_rows.borrow_mut().push(sidebar_row.clone());
                 rows.borrow_mut().push(sidebar_row);
+                filter_positions
+                    .borrow_mut()
+                    .push((filter, cat_idx, row_idx as i32));
             }
 
             let list_boxes_clone = list_boxes.clone();
@@ -196,20 +205,35 @@ impl Sidebar {
             container,
             rows,
             list_boxes,
+            filter_positions,
         }
     }
 
-    pub fn select_all(&self) {
+    pub fn select_filter(&self, target: CrawlFilter) -> bool {
+        let found = self
+            .filter_positions
+            .borrow()
+            .iter()
+            .find(|(filter, _, _)| *filter == target)
+            .copied();
+        let Some((_, target_lb_idx, target_row_idx)) = found else {
+            return false;
+        };
         let list_boxes = self.list_boxes.borrow();
         for (i, lb) in list_boxes.iter().enumerate() {
-            if i == 0 {
-                if let Some(first_row) = lb.row_at_index(0) {
-                    lb.select_row(Some(&first_row));
+            if i == target_lb_idx {
+                if let Some(row) = lb.row_at_index(target_row_idx) {
+                    lb.select_row(Some(&row));
                 }
             } else {
                 lb.select_row(None::<&gtk::ListBoxRow>);
             }
         }
+        true
+    }
+
+    pub fn select_all(&self) {
+        let _ = self.select_filter(CrawlFilter::All);
     }
 
     pub fn widget(&self) -> &gtk::Box {

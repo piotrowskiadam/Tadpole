@@ -337,8 +337,14 @@ impl MainWindow {
         main_paned.set_start_child(Some(sidebar.widget()));
 
         let right_paned = gtk::Paned::new(gtk::Orientation::Vertical);
-        right_paned.set_position(500);
+        right_paned.set_position(460);
+        right_paned.set_resize_start_child(true);
+        right_paned.set_shrink_start_child(true);
+        right_paned.set_resize_end_child(false);
+        right_paned.set_shrink_end_child(false);
         right_paned.set_wide_handle(true);
+        right_paned.set_vexpand(true);
+        right_paned.set_hexpand(true);
         main_paned.set_end_child(Some(&right_paned));
 
         // Box for table and search entry above it
@@ -407,11 +413,16 @@ impl MainWindow {
                         if let Some(notebook) = notebook.upgrade() {
                             notebook.set_current_page(Some(TAB_CRAWL_RESULTS));
                         }
+                        if !search.text().is_empty() {
+                            search.set_text("");
+                        }
+                        if let Some(filter) = kind.crawl_filter() {
+                            let _ = sidebar.select_filter(filter);
+                        } else {
+                            sidebar.select_all();
+                        }
                         if !table.select_url_and_reveal(&url) {
                             sidebar.select_all();
-                            if !search.text().is_empty() {
-                                search.set_text("");
-                            }
                             let _ = table.select_url_and_reveal(&url);
                         }
                         details.update(&url, &state);

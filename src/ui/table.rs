@@ -29,6 +29,8 @@ fn map_ordering(ord: std::cmp::Ordering) -> gtk::Ordering {
 impl Table {
     pub fn new() -> Self {
         let scrolled_window = gtk::ScrolledWindow::new();
+        scrolled_window.set_propagate_natural_height(false);
+        scrolled_window.set_min_content_height(160);
         scrolled_window.set_vexpand(true);
         scrolled_window.set_hexpand(true);
 
@@ -437,12 +439,17 @@ impl Table {
                     if let Some(res) = row_data.get_result() {
                         if res.url == url {
                             self.selection_model.set_selected(i);
-                            self.column_view.scroll_to(
-                                i,
-                                None,
-                                gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
-                                None,
-                            );
+                            let column_view = self.column_view.clone();
+                            glib::idle_add_local_once(move || {
+                                if column_view.is_mapped() {
+                                    column_view.scroll_to(
+                                        i,
+                                        None,
+                                        gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
+                                        None,
+                                    );
+                                }
+                            });
                             return true;
                         }
                     }
