@@ -321,6 +321,13 @@ impl DiscoveryPanel {
                     .title("Export discovery findings")
                     .initial_name("tadpole-discovery.csv")
                     .build();
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("CSV Files"));
+                filter.add_pattern("*.csv");
+                let filters = gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+                dialog.set_default_filter(Some(&filter));
                 let p = Rc::downgrade(&p);
                 dialog.save(parent.as_ref(), None::<&gio::Cancellable>, move |result| {
                     let (Some(p), Ok(file)) = (p.upgrade(), result) else {

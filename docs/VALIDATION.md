@@ -22,6 +22,6 @@ The real crawl window was rendered through GTK's isolated Broadway backend and i
 
 Direct PNG exports through the Cairo renderer produced invalid colors for Broadway-specific render nodes, so that export helper was removed. The retained preview example opens the real widgets for inspection. Browser forwarding did not provide a reliable automated interaction test in this environment; no claim is made that keyboard, screen-reader, clipboard or file-picker behavior was exhaustively tested.
 
-Two independent code-review axes confirmed their findings resolved; see [REVIEW.md](REVIEW.md). No live paid-provider request, release-profile performance comparison, Windows/Snap installation or package release was performed. See [DEVELOPMENT.md](DEVELOPMENT.md) for the remaining release checks.
+Two independent code-review axes confirmed their findings resolved; see [REVIEW.md](REVIEW.md). No live paid-provider request, release-profile performance comparison, Windows/Snap installation or package release was performed. See [DEVELOPMENT.md](DEVELOPMENT.md) for the remaining release checks and [WINDOWS_VALIDATION.md](WINDOWS_VALIDATION.md) for the clean-machine Windows validation checklist.
 
 After the owner requested removal of the standalone research workspace, both 29-test suites, core Clippy with `-D warnings`, formatting, desktop build and diff checks were rerun successfully. Obsolete workspace/provider tests and settings were removed; the completion-response and credential tests remain.

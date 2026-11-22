@@ -799,6 +799,9 @@ pub fn get_slug_filename(url_str: &str) -> String {
                     slug.push('-');
                 }
             }
+            if is_windows_reserved_device_name(&slug) {
+                return format!("page-{slug}");
+            }
             return slug;
         }
     }
@@ -808,6 +811,34 @@ pub fn get_slug_filename(url_str: &str) -> String {
     let mut hasher = DefaultHasher::new();
     url_str.hash(&mut hasher);
     format!("page_{}", hasher.finish())
+}
+
+fn is_windows_reserved_device_name(name: &str) -> bool {
+    matches!(
+        name,
+        "con"
+            | "prn"
+            | "aux"
+            | "nul"
+            | "com1"
+            | "com2"
+            | "com3"
+            | "com4"
+            | "com5"
+            | "com6"
+            | "com7"
+            | "com8"
+            | "com9"
+            | "lpt1"
+            | "lpt2"
+            | "lpt3"
+            | "lpt4"
+            | "lpt5"
+            | "lpt6"
+            | "lpt7"
+            | "lpt8"
+            | "lpt9"
+    )
 }
 
 async fn download_image_to_dir(

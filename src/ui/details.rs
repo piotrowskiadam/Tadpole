@@ -822,6 +822,7 @@ impl Details {
                 let filters = gio::ListStore::new::<gtk::FileFilter>();
                 filters.append(&filter);
                 dialog.set_filters(Some(&filters));
+                dialog.set_default_filter(Some(&filter));
 
                 let root_window = notebook_weak
                     .upgrade()
@@ -1921,6 +1922,9 @@ fn export_detail_csv(
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("CSV Files"));
     filter.add_pattern("*.csv");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
     dialog.set_default_filter(Some(&filter));
     let headers: Vec<String> = headers.iter().map(|s| s.to_string()).collect();
     let parent = parent.cloned();
