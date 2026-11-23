@@ -1,8 +1,12 @@
+pub use crate::link_opportunities::{
+    FilterCombinator, FilterOperator, NgramInfo, OpportunityFilterField, OpportunityFilterRule,
+    OpportunityFilterSet, OpportunityInfo, strip_context_markup,
+};
 use crate::state::CrawlState;
 use adw::prelude::*;
 use glib::Object;
 use glib::subclass::prelude::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -25,14 +29,6 @@ enum AnalysisUpdate {
 // ==========================================
 // 1. GObject Subclass for Opportunity Row
 // ==========================================
-
-#[derive(Debug, Clone, Default)]
-pub struct OpportunityInfo {
-    pub source_url: String,
-    pub target_url: String,
-    pub keyword: String,
-    pub context: String,
-}
 
 glib::wrapper! {
     pub struct OpportunityRowData(ObjectSubclass<imp::OpportunityRowData>);
@@ -73,13 +69,6 @@ mod imp {
 // 2. GObject Subclass for N-gram Row
 // ==========================================
 
-#[derive(Debug, Clone, Default)]
-pub struct NgramInfo {
-    pub phrase: String,
-    pub length: u8,
-    pub frequency: usize,
-}
-
 glib::wrapper! {
     pub struct NgramRowData(ObjectSubclass<imp_ngram::NgramRowData>);
 }
@@ -119,6 +108,33 @@ mod imp_ngram {
 // 3. Main Link Opportunities UI Panel
 // ==========================================
 
+struct RuleRowWidgets {
+    row_box: gtk::Box,
+    field_dropdown: gtk::DropDown,
+    operator_dropdown: gtk::DropDown,
+    value_entry: gtk::Entry,
+    remove_button: gtk::Button,
+}
+
+fn default_placeholder_for_field(
+    field: OpportunityFilterField,
+    operator: FilterOperator,
+) -> &'static str {
+    match (field, operator) {
+        (OpportunityFilterField::EitherUrl, FilterOperator::NotContains) => {
+            "Exclude URLs containing (e.g. /tag/, /author/, ?page=)..."
+        }
+        (OpportunityFilterField::AnchorKeyword, FilterOperator::NotContains) => {
+            "Exclude anchors containing (e.g. brand, author)..."
+        }
+        (OpportunityFilterField::AnchorKeyword, _) => {
+            "Comma-separated anchor keywords (e.g. seo audit, internal links)..."
+        }
+        (OpportunityFilterField::ContextSnippet, _) => "Comma-separated context phrases...",
+        _ => "Comma-separated URL patterns (e.g. /blog/, /guides/)...",
+    }
+}
+
 pub struct LinkOpportunitiesPanel {
     widget: gtk::Box,
     opp_store: gio::ListStore,
@@ -130,7 +146,8 @@ pub struct LinkOpportunitiesPanel {
     analyze_button: gtk::Button,
     cancel_button: gtk::Button,
     cancel_token: Rc<RefCell<Option<Arc<AtomicBool>>>>,
-    analysis_epoch: Rc<std::cell::Cell<u64>>,
+    analysis_epoch: Rc<Cell<u64>>,
+    clear_filters_btn: gtk::Button,
 }
 
 impl LinkOpportunitiesPanel {
@@ -176,6 +193,46 @@ impl LinkOpportunitiesPanel {
 
         widget.append(&toolbar);
 
+        // --- Ahrefs-style Live Rule Filter Bar ---
+        let filter_bar = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let filter_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+
+        let filter_title = gtk::Label::new(Some("Rules:"));
+        filter_title.add_css_class("heading");
+        filter_header.append(&filter_title);
+
+        let combinator_labels: Vec<&str> =
+            FilterCombinator::ALL.iter().map(|c| c.label()).collect();
+        let combinator_dropdown = gtk::DropDown::from_strings(&combinator_labels);
+        combinator_dropdown.set_selected(FilterCombinator::And.to_index());
+        combinator_dropdown.set_tooltip_text(Some("Combine active filter rules with AND or OR"));
+        filter_header.append(&combinator_dropdown);
+
+        let add_filter_btn = gtk::Button::builder()
+            .label("+ Add filter")
+            .tooltip_text("Add another filter rule")
+            .build();
+        filter_header.append(&add_filter_btn);
+
+        let clear_filters_btn = gtk::Button::builder()
+            .label("Clear filters")
+            .tooltip_text("Reset filter rules to default quick exclusions")
+            .build();
+        filter_header.append(&clear_filters_btn);
+
+        let filter_count_label = gtk::Label::new(Some("Showing 0 of 0 link opportunities"));
+        filter_count_label.add_css_class("dim-label");
+        filter_count_label.add_css_class("numeric");
+        filter_count_label.set_hexpand(true);
+        filter_count_label.set_halign(gtk::Align::End);
+        filter_header.append(&filter_count_label);
+
+        filter_bar.append(&filter_header);
+
+        let rules_container = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        filter_bar.append(&rules_container);
+        widget.append(&filter_bar);
+
         // Split pane: Top = Opportunities table, Bottom = N-grams table
         let split_pane = gtk::Paned::new(gtk::Orientation::Vertical);
         split_pane.set_position(350);
@@ -184,11 +241,16 @@ impl LinkOpportunitiesPanel {
         split_pane.set_hexpand(true);
         widget.append(&split_pane);
 
+        // Shared filter state
+        let filter_set = Rc::new(RefCell::new(OpportunityFilterSet::default()));
+        let rule_rows: Rc<RefCell<Vec<RuleRowWidgets>>> = Rc::new(RefCell::new(Vec::new()));
+        let syncing_rules = Rc::new(Cell::new(false));
+
         // --- Top Pane: Opportunities Table ---
         let opp_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         opp_box.set_vexpand(true);
         let opp_title = gtk::Label::builder()
-            .label("Internal Link Opportunities (Missing Links)")
+            .label("Internal Link Opportunities")
             .halign(gtk::Align::Start)
             .css_classes(vec!["heading".to_string()])
             .build();
@@ -199,9 +261,18 @@ impl LinkOpportunitiesPanel {
         opp_scrolled.set_hexpand(true);
 
         let opp_store = gio::ListStore::new::<OpportunityRowData>();
-        let opp_sel = gtk::SingleSelection::new(Some(opp_store.clone()));
+        let filter_set_for_opp = filter_set.clone();
+        let opp_custom_filter = gtk::CustomFilter::new(move |obj| {
+            obj.downcast_ref::<OpportunityRowData>()
+                .and_then(|row| row.get_info())
+                .is_some_and(|info| filter_set_for_opp.borrow().matches(&info))
+        });
+        let opp_filter_model =
+            gtk::FilterListModel::new(Some(opp_store.clone()), Some(opp_custom_filter.clone()));
+        let opp_sel = gtk::SingleSelection::new(Some(opp_filter_model.clone()));
         let opp_view = gtk::ColumnView::new(Some(opp_sel.clone()));
         opp_view.add_css_class("data-table");
+        opp_view.set_show_column_separators(true);
         opp_scrolled.set_child(Some(&opp_view));
         opp_box.append(&opp_scrolled);
         split_pane.set_start_child(Some(&opp_box));
@@ -209,25 +280,26 @@ impl LinkOpportunitiesPanel {
         // Column setup for opportunities
         let col_source =
             Self::create_opp_column("Source Page", false, |info| info.source_url.clone());
-        col_source.set_fixed_width(220);
+        col_source.set_fixed_width(310);
         col_source.set_resizable(true);
         opp_view.append_column(&col_source);
 
         let col_target = Self::create_opp_column("Target Page (Suggested)", false, |info| {
             info.target_url.clone()
         });
-        col_target.set_fixed_width(220);
+        col_target.set_fixed_width(310);
         col_target.set_resizable(true);
         opp_view.append_column(&col_target);
 
         let col_keyword =
             Self::create_opp_column("Anchor Keyword", false, |info| info.keyword.clone());
-        col_keyword.set_fixed_width(140);
+        col_keyword.set_fixed_width(180);
         col_keyword.set_resizable(true);
         opp_view.append_column(&col_keyword);
 
         let col_context =
             Self::create_opp_column("Context Snippet", true, |info| info.context.clone());
+        col_context.set_fixed_width(360);
         col_context.set_expand(true);
         col_context.set_resizable(true);
         opp_view.append_column(&col_context);
@@ -236,7 +308,7 @@ impl LinkOpportunitiesPanel {
         let ngram_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         ngram_box.set_vexpand(true);
         let ngram_title = gtk::Label::builder()
-            .label("Top N-grams (Common Phrases Across Site Titles/Headings)")
+            .label("Top N-grams (Common Phrases Across Site Titles/Headings — double-click to filter Anchor Keyword)")
             .halign(gtk::Align::Start)
             .css_classes(vec!["heading".to_string()])
             .build();
@@ -247,23 +319,302 @@ impl LinkOpportunitiesPanel {
         ngram_scrolled.set_hexpand(true);
 
         let ngram_store = gio::ListStore::new::<NgramRowData>();
-        let ngram_sel = gtk::SingleSelection::new(Some(ngram_store.clone()));
+        let filter_set_for_ngram = filter_set.clone();
+        let ngram_custom_filter = gtk::CustomFilter::new(move |obj| {
+            obj.downcast_ref::<NgramRowData>()
+                .and_then(|row| row.get_info())
+                .is_some_and(|info| filter_set_for_ngram.borrow().matches_ngram(&info))
+        });
+        let ngram_filter_model =
+            gtk::FilterListModel::new(Some(ngram_store.clone()), Some(ngram_custom_filter.clone()));
+        let ngram_sel = gtk::SingleSelection::new(Some(ngram_filter_model.clone()));
         let ngram_view = gtk::ColumnView::new(Some(ngram_sel));
         ngram_view.add_css_class("data-table");
+        ngram_view.set_show_column_separators(true);
         ngram_scrolled.set_child(Some(&ngram_view));
         ngram_box.append(&ngram_scrolled);
         split_pane.set_end_child(Some(&ngram_box));
 
         // Column setup for n-grams
-        let col_phrase = Self::create_ngram_column("Phrase", |info| info.phrase.clone());
+        let col_phrase = Self::create_ngram_column("Phrase", true, |info| info.phrase.clone());
+        col_phrase.set_fixed_width(260);
         col_phrase.set_expand(true);
+        col_phrase.set_resizable(true);
         ngram_view.append_column(&col_phrase);
 
-        let col_length = Self::create_ngram_column("Word Count", |info| info.length.to_string());
+        let col_length =
+            Self::create_ngram_column("Word Count", false, |info| info.length.to_string());
+        col_length.set_fixed_width(110);
+        col_length.set_resizable(true);
         ngram_view.append_column(&col_length);
 
-        let col_freq = Self::create_ngram_column("Occurrences", |info| info.frequency.to_string());
+        let col_freq =
+            Self::create_ngram_column("Occurrences", false, |info| info.frequency.to_string());
+        col_freq.set_fixed_width(110);
+        col_freq.set_resizable(true);
         ngram_view.append_column(&col_freq);
+
+        // Live filter evaluation helper
+        let refresh_filters: Rc<dyn Fn()> = {
+            let filter_set = filter_set.clone();
+            let rule_rows = rule_rows.clone();
+            let combinator_dropdown = combinator_dropdown.clone();
+            let opp_custom_filter = opp_custom_filter.clone();
+            let ngram_custom_filter = ngram_custom_filter.clone();
+            let opp_filter_model = opp_filter_model.clone();
+            let opp_store = opp_store.clone();
+            let filter_count_label = filter_count_label.clone();
+            let export_button = export_button.clone();
+            let analyze_button = analyze_button.clone();
+            Rc::new(move || {
+                {
+                    let rows = rule_rows.borrow();
+                    let can_remove = rows.len() > 1;
+                    let mut rules = Vec::with_capacity(rows.len());
+                    for r in rows.iter() {
+                        r.remove_button.set_sensitive(can_remove);
+                        let field = OpportunityFilterField::from_index(r.field_dropdown.selected());
+                        let operator = FilterOperator::from_index(r.operator_dropdown.selected());
+                        r.value_entry
+                            .set_placeholder_text(Some(default_placeholder_for_field(
+                                field, operator,
+                            )));
+                        rules.push(OpportunityFilterRule {
+                            field,
+                            operator,
+                            raw_value: r.value_entry.text().to_string(),
+                        });
+                    }
+                    let mut set = filter_set.borrow_mut();
+                    set.combinator = FilterCombinator::from_index(combinator_dropdown.selected());
+                    set.rules = rules;
+                }
+                opp_custom_filter.changed(gtk::FilterChange::Different);
+                ngram_custom_filter.changed(gtk::FilterChange::Different);
+                let visible = opp_filter_model.n_items();
+                let total = opp_store.n_items();
+                filter_count_label.set_text(&format!(
+                    "Showing {} of {} link opportunities",
+                    visible, total
+                ));
+                if analyze_button.is_sensitive() {
+                    export_button.set_sensitive(visible > 0);
+                }
+            })
+        };
+
+        // Helper to append a rule row
+        let append_rule_row: Rc<
+            dyn Fn(OpportunityFilterField, FilterOperator, &str, Option<&str>),
+        > = {
+            let rules_container = rules_container.clone();
+            let rule_rows = rule_rows.clone();
+            let refresh_filters = refresh_filters.clone();
+            let syncing_rules = syncing_rules.clone();
+
+            Rc::new(move |field, operator, initial_value, custom_placeholder| {
+                let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+
+                let field_labels: Vec<&str> = OpportunityFilterField::ALL
+                    .iter()
+                    .map(|f| f.label())
+                    .collect();
+                let field_dropdown = gtk::DropDown::from_strings(&field_labels);
+                field_dropdown.set_selected(field.to_index());
+
+                let op_labels: Vec<&str> = FilterOperator::ALL.iter().map(|o| o.label()).collect();
+                let operator_dropdown = gtk::DropDown::from_strings(&op_labels);
+                operator_dropdown.set_selected(operator.to_index());
+
+                let placeholder = custom_placeholder
+                    .unwrap_or_else(|| default_placeholder_for_field(field, operator));
+                let value_entry = gtk::Entry::builder()
+                    .placeholder_text(placeholder)
+                    .text(initial_value)
+                    .hexpand(true)
+                    .build();
+
+                let remove_button = gtk::Button::builder()
+                    .icon_name("list-remove-symbolic")
+                    .tooltip_text("Remove filter rule")
+                    .build();
+
+                row_box.append(&field_dropdown);
+                row_box.append(&operator_dropdown);
+                row_box.append(&value_entry);
+                row_box.append(&remove_button);
+                rules_container.append(&row_box);
+
+                let refresh_on_field = refresh_filters.clone();
+                let syncing_on_field = syncing_rules.clone();
+                field_dropdown.connect_selected_notify(move |_| {
+                    if !syncing_on_field.get() {
+                        refresh_on_field();
+                    }
+                });
+
+                let refresh_on_op = refresh_filters.clone();
+                let syncing_on_op = syncing_rules.clone();
+                operator_dropdown.connect_selected_notify(move |_| {
+                    if !syncing_on_op.get() {
+                        refresh_on_op();
+                    }
+                });
+
+                let refresh_on_val = refresh_filters.clone();
+                let syncing_on_val = syncing_rules.clone();
+                value_entry.connect_changed(move |_| {
+                    if !syncing_on_val.get() {
+                        refresh_on_val();
+                    }
+                });
+
+                let rules_container_for_rm = rules_container.clone();
+                let rule_rows_for_rm = rule_rows.clone();
+                let refresh_on_rm = refresh_filters.clone();
+                let row_box_for_rm = row_box.clone();
+                remove_button.connect_clicked(move |_| {
+                    {
+                        let mut rows = rule_rows_for_rm.borrow_mut();
+                        if rows.len() <= 1 {
+                            return;
+                        }
+                        if let Some(pos) = rows.iter().position(|r| r.row_box == row_box_for_rm) {
+                            rows.remove(pos);
+                            rules_container_for_rm.remove(&row_box_for_rm);
+                        }
+                    }
+                    refresh_on_rm();
+                });
+
+                rule_rows.borrow_mut().push(RuleRowWidgets {
+                    row_box,
+                    field_dropdown,
+                    operator_dropdown,
+                    value_entry,
+                    remove_button,
+                });
+            })
+        };
+
+        let seed_default_rules: Rc<dyn Fn()> = {
+            let rules_container = rules_container.clone();
+            let rule_rows = rule_rows.clone();
+            let combinator_dropdown = combinator_dropdown.clone();
+            let append_rule_row = append_rule_row.clone();
+            let refresh_filters = refresh_filters.clone();
+            let syncing_rules = syncing_rules.clone();
+            Rc::new(move || {
+                syncing_rules.set(true);
+                for r in rule_rows.borrow_mut().drain(..) {
+                    rules_container.remove(&r.row_box);
+                }
+                combinator_dropdown.set_selected(FilterCombinator::And.to_index());
+                append_rule_row(
+                    OpportunityFilterField::EitherUrl,
+                    FilterOperator::NotContains,
+                    "",
+                    Some("Exclude URLs containing (e.g. /tag/, /author/, ?page=)..."),
+                );
+                append_rule_row(
+                    OpportunityFilterField::AnchorKeyword,
+                    FilterOperator::NotContains,
+                    "",
+                    Some("Exclude anchors containing (e.g. brand, author)..."),
+                );
+                syncing_rules.set(false);
+                refresh_filters();
+            })
+        };
+
+        seed_default_rules();
+
+        {
+            let refresh_on_comb = refresh_filters.clone();
+            let syncing_on_comb = syncing_rules.clone();
+            combinator_dropdown.connect_selected_notify(move |_| {
+                if !syncing_on_comb.get() {
+                    refresh_on_comb();
+                }
+            });
+        }
+
+        {
+            let append_rule_row = append_rule_row.clone();
+            let refresh_filters = refresh_filters.clone();
+            add_filter_btn.connect_clicked(move |_| {
+                append_rule_row(
+                    OpportunityFilterField::EitherUrl,
+                    FilterOperator::Contains,
+                    "",
+                    None,
+                );
+                refresh_filters();
+            });
+        }
+
+        {
+            let seed_default_rules = seed_default_rules.clone();
+            clear_filters_btn.connect_clicked(move |_| {
+                seed_default_rules();
+            });
+        }
+
+        // Activating a row in Top N-grams sets or adds an Anchor Keyword + Contains rule
+        {
+            let ngram_filter_model = ngram_filter_model.clone();
+            let rule_rows = rule_rows.clone();
+            let append_rule_row = append_rule_row.clone();
+            let refresh_filters = refresh_filters.clone();
+            let syncing_rules = syncing_rules.clone();
+            ngram_view.connect_activate(move |_, pos| {
+                let Some(phrase) = ngram_filter_model
+                    .item(pos)
+                    .and_downcast::<NgramRowData>()
+                    .and_then(|row| row.get_info())
+                    .map(|info| info.phrase)
+                else {
+                    return;
+                };
+
+                syncing_rules.set(true);
+                let updated_existing = {
+                    let rows = rule_rows.borrow();
+                    if let Some(existing) = rows.iter().find(|r| {
+                        OpportunityFilterField::from_index(r.field_dropdown.selected())
+                            == OpportunityFilterField::AnchorKeyword
+                            && FilterOperator::from_index(r.operator_dropdown.selected())
+                                == FilterOperator::Contains
+                    }) {
+                        existing.value_entry.set_text(&phrase);
+                        true
+                    } else if let Some(empty_row) =
+                        rows.iter().find(|r| r.value_entry.text().trim().is_empty())
+                    {
+                        empty_row
+                            .field_dropdown
+                            .set_selected(OpportunityFilterField::AnchorKeyword.to_index());
+                        empty_row
+                            .operator_dropdown
+                            .set_selected(FilterOperator::Contains.to_index());
+                        empty_row.value_entry.set_text(&phrase);
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if !updated_existing {
+                    append_rule_row(
+                        OpportunityFilterField::AnchorKeyword,
+                        FilterOperator::Contains,
+                        &phrase,
+                        None,
+                    );
+                }
+                syncing_rules.set(false);
+                refresh_filters();
+            });
+        }
 
         // Wire up analyze action
         let state_clone = state.clone();
@@ -286,8 +637,8 @@ impl LinkOpportunitiesPanel {
             }
         });
 
-        // Wire up export action
-        let opp_store_for_export = opp_store.clone();
+        // Wire up export action (iterates over filtered opportunities!)
+        let opp_filter_for_export = opp_filter_model.clone();
         export_button.connect_clicked(move |btn| {
             let root = btn.root();
             let parent_window = root.as_ref().and_then(|r| r.downcast_ref::<gtk::Window>());
@@ -304,7 +655,7 @@ impl LinkOpportunitiesPanel {
             file_dialog.set_filters(Some(&filters));
             file_dialog.set_default_filter(Some(&filter));
 
-            let opp_store_inner = opp_store_for_export.clone();
+            let opp_filter_inner = opp_filter_for_export.clone();
             file_dialog.save(parent_window, None::<&gio::Cancellable>, move |result| {
                 if let Ok(file) = result {
                     if let Some(path) = file.path() {
@@ -323,12 +674,11 @@ impl LinkOpportunitiesPanel {
                             "Context Snippet",
                         ]);
 
-                        for i in 0..opp_store_inner.n_items() {
-                            if let Some(item) = opp_store_inner.item(i) {
+                        for i in 0..opp_filter_inner.n_items() {
+                            if let Some(item) = opp_filter_inner.item(i) {
                                 if let Some(row_data) = item.downcast_ref::<OpportunityRowData>() {
                                     if let Some(info) = row_data.get_info() {
-                                        let plain_context =
-                                            info.context.replace("<b>", "").replace("</b>", "");
+                                        let plain_context = strip_context_markup(&info.context);
                                         let _ = wtr.write_record(&[
                                             &info.source_url,
                                             &info.target_url,
@@ -349,6 +699,7 @@ impl LinkOpportunitiesPanel {
         let target_for_analysis = target_entry.clone();
         let analyze_button_for_panel = analyze_button.clone();
         let cancel_button_for_panel = cancel_button.clone();
+        let refresh_after_analysis = refresh_filters.clone();
         analyze_button.connect_clicked(move |_| {
             button_clone.set_sensitive(false);
             cancel_button_clone.set_sensitive(true);
@@ -381,6 +732,7 @@ impl LinkOpportunitiesPanel {
             let button_inner = button_clone.clone();
             let cancel_inner = cancel_button_clone.clone();
             let export_inner = export_button_inner.clone();
+            let refresh_on_finish = refresh_after_analysis.clone();
 
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AnalysisUpdate>();
 
@@ -421,6 +773,7 @@ impl LinkOpportunitiesPanel {
                             target_entry_inner.set_sensitive(true);
                             cancel_inner.set_sensitive(false);
                             export_inner.set_sensitive(opp_count > 0);
+                            refresh_on_finish();
                         }
                         AnalysisUpdate::Cancelled => {
                             status_lbl_inner.set_text("Analysis cancelled by user.");
@@ -428,6 +781,7 @@ impl LinkOpportunitiesPanel {
                             button_inner.set_sensitive(true);
                             cancel_inner.set_sensitive(false);
                             export_inner.set_sensitive(opp_store_inner.n_items() > 0);
+                            refresh_on_finish();
                         }
                     }
                 }
@@ -590,6 +944,7 @@ impl LinkOpportunitiesPanel {
             cancel_button: cancel_button_for_panel,
             cancel_token: cancel_token_for_panel,
             analysis_epoch,
+            clear_filters_btn,
         }
     }
 
@@ -639,6 +994,7 @@ impl LinkOpportunitiesPanel {
         self._export_button.set_sensitive(false);
         self.opp_store.remove_all();
         self.ngram_store.remove_all();
+        self.clear_filters_btn.emit_clicked();
         self.status_label
             .set_text("Ready (click Analyze to process crawled pages)");
     }
@@ -651,8 +1007,12 @@ impl LinkOpportunitiesPanel {
         factory.connect_setup(|_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let label = gtk::Label::new(None);
-            label.set_halign(gtk::Align::Start);
+            label.set_halign(gtk::Align::Fill);
+            label.set_xalign(0.0);
             label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            label.set_wrap(true);
+            label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
             label.set_margin_start(10);
             label.set_margin_end(10);
             label.set_margin_top(6);
@@ -672,24 +1032,33 @@ impl LinkOpportunitiesPanel {
                 if use_markup {
                     label.set_use_markup(true);
                     label.set_markup(&text);
+                    let plain = strip_context_markup(&text);
+                    label.set_tooltip_text(if plain.is_empty() { None } else { Some(&plain) });
                 } else {
                     label.set_text(&text);
+                    label.set_tooltip_text(if text.is_empty() { None } else { Some(&text) });
                 }
             }
         });
         gtk::ColumnViewColumn::new(Some(title), Some(factory))
     }
 
-    fn create_ngram_column<F>(title: &str, select_fn: F) -> gtk::ColumnViewColumn
+    fn create_ngram_column<F>(title: &str, wrap: bool, select_fn: F) -> gtk::ColumnViewColumn
     where
         F: Fn(&NgramInfo) -> String + 'static,
     {
         let factory = gtk::SignalListItemFactory::new();
-        factory.connect_setup(|_, obj| {
+        factory.connect_setup(move |_, obj| {
             let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
             let label = gtk::Label::new(None);
-            label.set_halign(gtk::Align::Start);
+            label.set_halign(gtk::Align::Fill);
+            label.set_xalign(0.0);
             label.set_valign(gtk::Align::Center);
+            label.set_hexpand(true);
+            label.set_wrap(wrap);
+            if wrap {
+                label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+            }
             label.set_margin_start(10);
             label.set_margin_end(10);
             label.set_margin_top(6);
@@ -701,7 +1070,13 @@ impl LinkOpportunitiesPanel {
             let label = list_item.child().and_downcast::<gtk::Label>().unwrap();
             let row_data = list_item.item().and_downcast::<NgramRowData>().unwrap();
             if let Some(info) = row_data.get_info() {
-                label.set_text(&select_fn(&info));
+                let text = select_fn(&info);
+                label.set_text(&text);
+                if wrap && !text.is_empty() {
+                    label.set_tooltip_text(Some(&text));
+                } else {
+                    label.set_tooltip_text(None);
+                }
             }
         });
         gtk::ColumnViewColumn::new(Some(title), Some(factory))
