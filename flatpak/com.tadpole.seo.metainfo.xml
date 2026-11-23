@@ -17,6 +17,11 @@
     <mediatype>application/x-tadpole-project</mediatype>
   </provides>
   <releases>
+    <release version="0.6.2" date="2026-11-23">
+      <description>
+        <p>Add Ahrefs-style live rule filters to Link Opportunities with comma-separated URL and anchor exclusions, synchronize Top N-grams with anchor rules and click-to-filter, export filtered CSV results, and wrap long URLs across Link Opportunities columns.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-11-23">
       <description>
         <p>Make Crawl Results columns resizable with sensible default widths and word wrapping, sync Open in Crawl Results jumps from Issues to the matching SEO Audit Filter, and prevent wrapping labels in hidden tabs from expanding the window past the screen.</p>

@@ -1,5 +1,11 @@
 # Tadpole releases
 
+## 0.6.2 — Link Opportunities Rule Filters & N-gram Sync
+
+- **Live rule filters in `Link Opportunities`:** filter analyzed link opportunities immediately without re-running analysis across five fields (`Either URL (Source or Target)`, `Source Page`, `Target Page`, `Anchor Keyword`, `Context Snippet`) and six case-insensitive operators (`Contains`, `Does not contain`, `Starts with`, `Ends with`, `Equals`, `Does not equal`) with comma-separated multi-value patterns, `Match all (AND)` / `Match any (OR)` combinators, and default quick-filter rows for URL and anchor exclusions.
+- **`Top N-grams` sync & click-to-filter:** anchor exclusion rules automatically filter the bottom `Top N-grams` table, and activating an N-gram row filters the top `Link Opportunities` table by that phrase.
+- **Filtered CSV export & wrapped URL columns:** `Export CSV...` in `Link Opportunities` now exports only the currently filtered rows, and the `Source Page`, `Target Page (Suggested)`, and `Anchor Keyword` columns use wider default widths with resizable dividers, word wrapping, and full-text tooltips.
+
 ## 0.6.1 — Crawl Results Table & Issues Navigation Fixes
 
 - **Resizable, wrapping Crawl Results columns:** set sensible default widths across all 8 Crawl Results columns, enable column resizing (`set_resizable(true)`) with visible column separators, and wrap long URLs, indexability labels, and titles (`WordChar` with full-text tooltips) so long addresses no longer push the rest of the table off-screen.
