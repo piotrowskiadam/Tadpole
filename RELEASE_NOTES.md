@@ -1,5 +1,13 @@
 # Tadpole releases
 
+## 0.6.3 — Smart Seed Redirects & Crawl Recovery Suggestions
+
+- **Automatic `apex ↔ www.` & `http → https` seed redirect resolution:** when a seed URL in `Crawl` or `Path` mode redirects between apex and `www.` (or upgrades `http` to `https`) with *Follow Redirects* enabled, Tadpole records the original seed URL as a `Redirect` row and automatically switches the crawl scope and sitemap discovery root to the canonical host instead of stopping after 1 URL.
+- **Non-modal inline crawl recovery banner:** when a crawl ends on a single blocked, failing, or cross-domain redirecting seed URL, Tadpole probes recovery options off the UI thread and displays a dismissible banner directly below the address bar with a one-click action:
+  - **Reachable `www.` / apex alternate** (e.g. `starwars.com` returning HTTP 403 while `www.starwars.com` returns 200) → **Crawl `www.starwars.com`**.
+  - **Cross-domain redirect** (e.g. `old.com` → `new.com`) → **Crawl `new.com`** without silently switching domains.
+  - **WAF / crawler User-Agent block (`401`/`403`/`406`/`429`)** → **Retry with Browser UA** when a standard browser User-Agent succeeds.
+
 ## 0.6.2 — Link Opportunities Rule Filters & N-gram Sync
 
 - **Live rule filters in `Link Opportunities`:** filter analyzed link opportunities immediately without re-running analysis across five fields (`Either URL (Source or Target)`, `Source Page`, `Target Page`, `Anchor Keyword`, `Context Snippet`) and six case-insensitive operators (`Contains`, `Does not contain`, `Starts with`, `Ends with`, `Equals`, `Does not equal`) with comma-separated multi-value patterns, `Match all (AND)` / `Match any (OR)` combinators, and default quick-filter rows for URL and anchor exclusions.

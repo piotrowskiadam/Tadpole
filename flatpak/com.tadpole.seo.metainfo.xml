@@ -17,6 +17,11 @@
     <mediatype>application/x-tadpole-project</mediatype>
   </provides>
   <releases>
+    <release version="0.6.3" date="2026-11-23">
+      <description>
+        <p>Automatically resolve apex-to-www and HTTP-to-HTTPS seed redirects into the active crawl scope while preserving the redirect row, and display a non-modal inline recovery banner under the address bar when a blocked or redirecting seed has a reachable www. host, cross-domain destination, or browser User-Agent fallback.</p>
+      </description>
+    </release>
     <release version="0.6.2" date="2026-11-23">
       <description>
         <p>Add Ahrefs-style live rule filters to Link Opportunities with comma-separated URL and anchor exclusions, synchronize Top N-grams with anchor rules and click-to-filter, export filtered CSV results, and wrap long URLs across Link Opportunities columns.</p>
