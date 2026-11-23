@@ -8,11 +8,27 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use url::Url;
 
+pub const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CrawlSuggestionAction {
+    CrawlUrl(String),
+    RetryWithUserAgent { url: String, user_agent: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrawlSuggestion {
+    pub message: String,
+    pub action_label: String,
+    pub action: CrawlSuggestionAction,
+}
+
 #[derive(Debug)]
 pub enum CrawlUpdate {
     Discovered(String),
     Crawled(Box<CrawlResult>),
     Discovery,
+    Suggestion(CrawlSuggestion),
     Finished,
 }
 
@@ -78,6 +94,211 @@ pub fn clean_seed_url(url: &str) -> String {
     } else {
         cleaned.to_string()
     }
+}
+
+fn strip_www_prefix(host: &str) -> &str {
+    if host.len() > 4 && host[..4].eq_ignore_ascii_case("www.") {
+        &host[4..]
+    } else {
+        host
+    }
+}
+
+/// Returns true when two hosts differ only by a leading `www.` label.
+pub fn is_equivalent_www_host(a: &str, b: &str) -> bool {
+    let a = a.trim_end_matches('.');
+    let b = b.trim_end_matches('.');
+    if a.is_empty() || b.is_empty() || a.eq_ignore_ascii_case(b) {
+        return false;
+    }
+    strip_www_prefix(a).eq_ignore_ascii_case(strip_www_prefix(b))
+}
+
+/// Returns true when a seed redirect should automatically switch the active crawl scope
+/// (`example.com` <-> `www.example.com`, or `http` -> `https` on the same host).
+pub fn should_adopt_seed_redirect(seed: &Url, dest: &Url) -> bool {
+    if seed == dest
+        || !matches!(seed.scheme(), "http" | "https")
+        || !matches!(dest.scheme(), "http" | "https")
+    {
+        return false;
+    }
+    let (Some(seed_host), Some(dest_host)) = (seed.host_str(), dest.host_str()) else {
+        return false;
+    };
+    let ports_compatible =
+        seed.port() == dest.port() || (seed.port().is_none() && dest.port().is_none());
+    if !ports_compatible {
+        return false;
+    }
+    if is_equivalent_www_host(seed_host, dest_host) {
+        return true;
+    }
+    seed_host.eq_ignore_ascii_case(dest_host)
+        && seed.scheme() == "http"
+        && dest.scheme() == "https"
+        && seed.port().is_none()
+        && dest.port().is_none()
+}
+
+/// Toggles a leading `www.` prefix on domain URLs (skips IPs and single-label hosts like `localhost`).
+pub fn toggle_www_url(url: &Url) -> Option<Url> {
+    let host = url.host_str()?;
+    if host.starts_with('[')
+        || host.parse::<std::net::IpAddr>().is_ok()
+        || !host.contains('.')
+        || host.eq_ignore_ascii_case("localhost")
+    {
+        return None;
+    }
+    let toggled = if host.len() > 4 && host[..4].eq_ignore_ascii_case("www.") {
+        let stripped = &host[4..];
+        if !stripped.contains('.') {
+            return None;
+        }
+        stripped.to_string()
+    } else {
+        format!("www.{host}")
+    };
+    let mut alt = url.clone();
+    alt.set_host(Some(&toggled)).ok()?;
+    Some(alt)
+}
+
+fn display_host_port(url: &Url) -> String {
+    let host = url.host_str().unwrap_or(url.as_str());
+    match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    }
+}
+
+struct SeedRedirectProbe {
+    first_status: u16,
+    final_url: Url,
+    elapsed_ms: u32,
+}
+
+async fn probe_seed_redirect(seed: &Url, user_agent: &str) -> Option<SeedRedirectProbe> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(6))
+        .user_agent(user_agent)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .ok()?;
+    let start = std::time::Instant::now();
+    let mut current = seed.clone();
+    let mut first_status = None;
+    for _ in 0..5 {
+        let response = client.get(current.as_str()).send().await.ok()?;
+        let status = response.status();
+        if !status.is_redirection() {
+            break;
+        }
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|h| h.to_str().ok())?;
+        let mut next = current.join(location).ok()?;
+        if !matches!(next.scheme(), "http" | "https") || next.host_str().is_none() {
+            break;
+        }
+        next.set_fragment(None);
+        if first_status.is_none() {
+            first_status = Some(status.as_u16());
+        }
+        if next == current {
+            break;
+        }
+        current = next;
+    }
+    let first_status = first_status?;
+    if current == *seed {
+        return None;
+    }
+    Some(SeedRedirectProbe {
+        first_status,
+        final_url: current,
+        elapsed_ms: start.elapsed().as_millis() as u32,
+    })
+}
+
+async fn probe_crawl_suggestion(
+    seed_result: &CrawlResult,
+    redirect_target: Option<&Url>,
+    config: &CrawlConfig,
+) -> Option<CrawlSuggestion> {
+    let seed_url = Url::parse(&seed_result.url).ok()?;
+
+    // 1. Cross-domain (or unfollowed) redirect
+    if let Some(dest) = redirect_target
+        && !crate::discovery::same_site(seed_url.as_str(), dest.as_str())
+    {
+        let from_host = display_host_port(&seed_url);
+        let to_host = display_host_port(dest);
+        return Some(CrawlSuggestion {
+            message: format!("{from_host} redirects to {to_host}."),
+            action_label: format!("Crawl {to_host}"),
+            action: CrawlSuggestionAction::CrawlUrl(dest.to_string()),
+        });
+    }
+
+    let seed_failed = seed_result.status_code.is_none_or(|c| c >= 400);
+    if !seed_failed {
+        return None;
+    }
+
+    // 2. Reachable www. / apex alternate
+    if let Some(alt_url) = toggle_www_url(&seed_url)
+        && let Ok(probe_client) = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .user_agent(&config.user_agent)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+        && let Ok(response) = probe_client.get(alt_url.as_str()).send().await
+        && response.status().is_success()
+    {
+        let mut final_url = response.url().clone();
+        final_url.set_fragment(None);
+        let from_host = display_host_port(&seed_url);
+        let to_host = display_host_port(&final_url);
+        let reason = match seed_result.status_code {
+            Some(code) => format!("returned HTTP {code}"),
+            None => "could not be reached".to_string(),
+        };
+        return Some(CrawlSuggestion {
+            message: format!("{from_host} {reason}, but {to_host} is reachable."),
+            action_label: format!("Crawl {to_host}"),
+            action: CrawlSuggestionAction::CrawlUrl(final_url.to_string()),
+        });
+    }
+
+    // 3. Browser User-Agent fallback on WAF/bot-block status codes
+    if matches!(seed_result.status_code, Some(401 | 403 | 406 | 429))
+        && !config.user_agent.contains("Mozilla/5.0")
+        && let Ok(probe_client) = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .user_agent(BROWSER_USER_AGENT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+        && let Ok(response) = probe_client.get(seed_url.as_str()).send().await
+        && response.status().is_success()
+    {
+        let mut final_url = response.url().clone();
+        final_url.set_fragment(None);
+        let from_host = display_host_port(&seed_url);
+        let code = seed_result.status_code.unwrap_or(403);
+        return Some(CrawlSuggestion {
+            message: format!("{from_host} returned HTTP {code} and may block crawler User-Agents."),
+            action_label: "Retry with Browser UA".to_string(),
+            action: CrawlSuggestionAction::RetryWithUserAgent {
+                url: final_url.to_string(),
+                user_agent: BROWSER_USER_AGENT.to_string(),
+            },
+        });
+    }
+
+    None
 }
 
 fn get_catalogue_url(seed: &str) -> Option<String> {
@@ -193,6 +414,35 @@ impl Crawler {
             return;
         }
 
+        if !self.state.is_crawling() {
+            self.state.set_crawling(true);
+        }
+        self.state.set_paused(false);
+
+        let mut adopted_seed_redirect: Option<(String, u16, u32, String)> = None;
+        let mut unadopted_redirect_target: Option<Url> = None;
+        if matches!(config.crawl_mode, CrawlMode::Crawl | CrawlMode::Path)
+            && seed_urls.len() == 1
+            && !self.state.stop_requested()
+            && let Some(probe) = probe_seed_redirect(&seed_urls[0], &config.user_agent).await
+        {
+            if config.follow_redirects
+                && should_adopt_seed_redirect(&seed_urls[0], &probe.final_url)
+            {
+                let original_url = seed_urls[0].to_string();
+                let resolved_url = probe.final_url.to_string();
+                adopted_seed_redirect = Some((
+                    original_url,
+                    probe.first_status,
+                    probe.elapsed_ms,
+                    resolved_url,
+                ));
+                seed_urls[0] = probe.final_url;
+            } else {
+                unadopted_redirect_target = Some(probe.final_url);
+            }
+        }
+
         let mut catalogue_url = None;
         if config.crawl_mode == CrawlMode::Path
             && let Some(cat) = get_catalogue_url(seed_urls[0].as_str())
@@ -215,10 +465,32 @@ impl Crawler {
             let _ = self.tx.send(CrawlUpdate::Discovery);
         }
 
-        if !self.state.is_crawling() {
-            self.state.set_crawling(true);
+        if let Some((original_url, status_code, elapsed_ms, resolved_url)) = adopted_seed_redirect
+            && config.max_urls > 1
+            && self.state.add_discovered(&original_url)
+        {
+            let mut redirect_res = CrawlResult::new_failed(
+                original_url.clone(),
+                Some(status_code),
+                Some(format!("HTTP {status_code}")),
+                "Redirect".to_string(),
+                0,
+                elapsed_ms,
+            );
+            redirect_res.outlinks.push(resolved_url.clone());
+            self.state.update_discovery(|s| {
+                s.responses.insert(
+                    original_url.clone(),
+                    crate::discovery::ResponseEvidence {
+                        final_url: crate::discovery::normalize_url(&resolved_url),
+                        noindex: false,
+                        redirected: true,
+                    },
+                );
+            });
+            self.state.insert_result(redirect_res.clone());
+            let _ = self.tx.send(CrawlUpdate::Crawled(Box::new(redirect_res)));
         }
-        self.state.set_paused(false);
 
         // Queue for URLs and depth to process (managed within async tokio task)
         let (queue_tx, mut queue_rx) = mpsc::unbounded_channel::<(String, usize)>();
@@ -398,6 +670,19 @@ impl Crawler {
                 snapshot.coverage.stopped |= crawler_arc.state.stop_requested();
                 crawler_arc.state.apply_discovery_depths(&snapshot.rows);
                 crawler_arc.state.set_discovery(Some(snapshot));
+            }
+        }
+
+        if !crawler_arc.state.stop_requested()
+            && matches!(config.crawl_mode, CrawlMode::Crawl | CrawlMode::Path)
+        {
+            let results = crawler_arc.state.get_all_results();
+            if results.len() == 1
+                && let Some(suggestion) =
+                    probe_crawl_suggestion(&results[0], unadopted_redirect_target.as_ref(), &config)
+                        .await
+            {
+                let _ = crawler_arc.tx.send(CrawlUpdate::Suggestion(suggestion));
             }
         }
 

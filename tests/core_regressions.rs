@@ -281,3 +281,188 @@ fn atomic_project_save_replaces_existing_file_without_secrets() {
     assert_eq!(loaded.results.len(), 2);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
 }
+
+#[test]
+fn seed_redirect_and_www_toggle_helpers_classify_hosts_accurately() {
+    use tadpole::crawler::{is_equivalent_www_host, should_adopt_seed_redirect, toggle_www_url};
+    use url::Url;
+
+    assert!(is_equivalent_www_host("starwars.com", "www.starwars.com"));
+    assert!(is_equivalent_www_host("WWW.Example.COM", "example.com."));
+    assert!(!is_equivalent_www_host("example.com", "example.com"));
+    assert!(!is_equivalent_www_host("old.com", "new.com"));
+    assert!(!is_equivalent_www_host(
+        "blog.example.com",
+        "www.example.com"
+    ));
+
+    let apex = Url::parse("https://starwars.com/").unwrap();
+    let www = Url::parse("https://www.starwars.com/").unwrap();
+    let http_apex = Url::parse("http://starwars.com/").unwrap();
+    let other = Url::parse("https://disney.com/").unwrap();
+    let subpath = Url::parse("https://starwars.com/news").unwrap();
+
+    assert!(should_adopt_seed_redirect(&apex, &www));
+    assert!(should_adopt_seed_redirect(&www, &apex));
+    assert!(should_adopt_seed_redirect(&http_apex, &apex));
+    assert!(should_adopt_seed_redirect(&http_apex, &www));
+    assert!(!should_adopt_seed_redirect(&apex, &other));
+    assert!(!should_adopt_seed_redirect(&apex, &subpath));
+    assert!(!should_adopt_seed_redirect(&apex, &apex));
+
+    assert_eq!(
+        toggle_www_url(&apex).map(|u| u.to_string()),
+        Some("https://www.starwars.com/".to_string())
+    );
+    assert_eq!(
+        toggle_www_url(&www).map(|u| u.to_string()),
+        Some("https://starwars.com/".to_string())
+    );
+    assert!(toggle_www_url(&Url::parse("http://127.0.0.1:8080/").unwrap()).is_none());
+    assert!(toggle_www_url(&Url::parse("http://localhost:8080/").unwrap()).is_none());
+    assert!(toggle_www_url(&Url::parse("https://www.com/").unwrap()).is_none());
+}
+
+#[tokio::test]
+async fn cross_domain_seed_redirect_suggests_destination_instead_of_switching_scope() {
+    use tadpole::crawler::CrawlSuggestionAction;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let dest_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dest_origin = format!("http://{}/", dest_listener.local_addr().unwrap());
+    let dest_handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = dest_listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0; 2048];
+                let _ = socket.read(&mut buf).await;
+                let body = "<html><body><a href='/page2'>Page 2</a></body></html>";
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+            });
+        }
+    });
+
+    let src_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let src_origin = format!("http://{}/", src_listener.local_addr().unwrap());
+    let redirect_target = dest_origin.clone();
+    let src_handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = src_listener.accept().await else {
+                break;
+            };
+            let target = redirect_target.clone();
+            tokio::spawn(async move {
+                let mut buf = [0; 2048];
+                let _ = socket.read(&mut buf).await;
+                let resp = format!(
+                    "HTTP/1.1 301 Moved Permanently\r\nLocation: {target}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+            });
+        }
+    });
+
+    let state = CrawlState::new();
+    state.set_config(CrawlConfig {
+        respect_robots: false,
+        sitemap_enabled: false,
+        ..Default::default()
+    });
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    Crawler::new(state.clone(), tx)
+        .start(src_origin.clone())
+        .await;
+
+    assert_eq!(state.get_stats().crawled, 1);
+    let mut suggestion = None;
+    while let Ok(update) = rx.try_recv() {
+        if let CrawlUpdate::Suggestion(s) = update {
+            suggestion = Some(s);
+        }
+    }
+    let suggestion = suggestion.expect("expected cross-domain redirect suggestion");
+    assert_eq!(
+        suggestion.action,
+        CrawlSuggestionAction::CrawlUrl(dest_origin)
+    );
+
+    src_handle.abort();
+    dest_handle.abort();
+}
+
+#[tokio::test]
+async fn blocked_crawler_ua_suggests_browser_ua_retry_and_recovers() {
+    use tadpole::crawler::{BROWSER_USER_AGENT, CrawlSuggestionAction};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}/", listener.local_addr().unwrap());
+    let handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0; 4096];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let is_browser = req.contains("Mozilla/5.0");
+                let path = req.split_whitespace().nth(1).unwrap_or("/");
+                let resp = if !is_browser {
+                    "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden".to_string()
+                } else if path == "/about" {
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 24\r\nConnection: close\r\n\r\n<html><body>About</body></html>".to_string()
+                } else {
+                    let body = "<html><body><a href='/about'>About</a></body></html>";
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                let _ = socket.write_all(resp.as_bytes()).await;
+            });
+        }
+    });
+
+    let state = CrawlState::new();
+    state.set_config(CrawlConfig {
+        respect_robots: false,
+        sitemap_enabled: false,
+        ..Default::default()
+    });
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    Crawler::new(state.clone(), tx).start(origin.clone()).await;
+
+    assert_eq!(state.get_stats().crawled, 1);
+    let mut suggestion = None;
+    while let Ok(update) = rx.try_recv() {
+        if let CrawlUpdate::Suggestion(s) = update {
+            suggestion = Some(s);
+        }
+    }
+    let suggestion = suggestion.expect("expected Browser UA fallback suggestion");
+    assert_eq!(
+        suggestion.action,
+        CrawlSuggestionAction::RetryWithUserAgent {
+            url: origin.clone(),
+            user_agent: BROWSER_USER_AGENT.to_string(),
+        }
+    );
+
+    // Following the suggestion recovers the crawl
+    state.reset();
+    let mut config = state.get_config();
+    config.user_agent = BROWSER_USER_AGENT.to_string();
+    state.set_config(config);
+    let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+    Crawler::new(state.clone(), tx2).start(origin).await;
+    assert_eq!(state.get_stats().crawled, 2);
+
+    handle.abort();
+}

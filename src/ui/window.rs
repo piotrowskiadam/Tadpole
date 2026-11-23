@@ -1,4 +1,4 @@
-use crate::crawler::{CrawlUpdate, Crawler};
+use crate::crawler::{CrawlSuggestionAction, CrawlUpdate, Crawler};
 use crate::state::{CrawlConfig, CrawlMode, CrawlState};
 use crate::ui::details::Details;
 use crate::ui::sidebar::{CrawlFilter, Sidebar};
@@ -56,6 +56,11 @@ pub struct MainWindow {
     mode_dropdown: gtk::DropDown,
     edit_list_button: gtk::Button,
     loaded_list_urls: Rc<RefCell<Vec<String>>>,
+    suggestion_revealer: gtk::Revealer,
+    suggestion_label: gtk::Label,
+    suggestion_action_btn: gtk::Button,
+    suggestion_dismiss_btn: gtk::Button,
+    pending_suggestion: Rc<RefCell<Option<CrawlSuggestionAction>>>,
     ui_busy: Rc<std::cell::Cell<bool>>,
     ui_crawl_active: Rc<std::cell::Cell<bool>>,
 }
@@ -236,6 +241,54 @@ impl MainWindow {
         main_box.append(&address_box);
         address_entry.update_property(&[gtk::accessible::Property::Label("Website URL")]);
         mode_dropdown.update_property(&[gtk::accessible::Property::Label("Crawl mode")]);
+
+        // Inline non-modal recovery suggestion banner directly under the address bar
+        let suggestion_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .reveal_child(false)
+            .build();
+        let suggestion_bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        suggestion_bar.add_css_class("card");
+        suggestion_bar.set_margin_start(12);
+        suggestion_bar.set_margin_end(12);
+        suggestion_bar.set_margin_bottom(6);
+
+        let suggestion_icon = gtk::Image::from_icon_name("dialog-information-symbolic");
+        suggestion_icon.add_css_class("accent");
+        suggestion_icon.set_margin_start(10);
+        suggestion_icon.set_valign(gtk::Align::Center);
+        suggestion_bar.append(&suggestion_icon);
+
+        let suggestion_label = gtk::Label::new(None);
+        suggestion_label.set_halign(gtk::Align::Fill);
+        suggestion_label.set_xalign(0.0);
+        suggestion_label.set_hexpand(true);
+        suggestion_label.set_wrap(true);
+        suggestion_label.set_width_chars(32);
+        suggestion_label.set_selectable(true);
+        suggestion_label.set_margin_top(8);
+        suggestion_label.set_margin_bottom(8);
+        suggestion_bar.append(&suggestion_label);
+
+        let suggestion_action_btn = gtk::Button::builder()
+            .css_classes(vec!["suggested-action".to_string()])
+            .valign(gtk::Align::Center)
+            .margin_top(6)
+            .margin_bottom(6)
+            .build();
+        suggestion_bar.append(&suggestion_action_btn);
+
+        let suggestion_dismiss_btn = gtk::Button::builder()
+            .icon_name("window-close-symbolic")
+            .has_frame(false)
+            .tooltip_text("Dismiss suggestion")
+            .valign(gtk::Align::Center)
+            .margin_end(6)
+            .build();
+        suggestion_bar.append(&suggestion_dismiss_btn);
+
+        suggestion_revealer.set_child(Some(&suggestion_bar));
+        main_box.append(&suggestion_revealer);
 
         // Progress bar at the top of content area
         let progress_bar = gtk::ProgressBar::new();
@@ -502,6 +555,7 @@ impl MainWindow {
         status_bar.append(&status_label);
 
         let loaded_list_urls = Rc::new(RefCell::new(Vec::new()));
+        let pending_suggestion = Rc::new(RefCell::new(None));
         let ui_busy = Rc::new(std::cell::Cell::new(false));
         let ui_crawl_active = Rc::new(std::cell::Cell::new(false));
 
@@ -524,6 +578,11 @@ impl MainWindow {
             mode_dropdown,
             edit_list_button,
             loaded_list_urls,
+            suggestion_revealer,
+            suggestion_label,
+            suggestion_action_btn,
+            suggestion_dismiss_btn,
+            pending_suggestion,
             ui_busy,
             ui_crawl_active,
         };
@@ -586,6 +645,8 @@ impl MainWindow {
             discovery: self.discovery.clone(),
             issues: self.issues.clone(),
             status_label: self.status_label.clone(),
+            suggestion_revealer: self.suggestion_revealer.clone(),
+            pending_suggestion: self.pending_suggestion.clone(),
         }
     }
 
@@ -1764,6 +1825,10 @@ impl MainWindow {
         let crawl_active_finish = ui_crawl_active.clone();
         let discovery_finish = discovery.clone();
         let issues_finish = issues.clone();
+        let suggestion_revealer_rx = self.suggestion_revealer.clone();
+        let suggestion_label_rx = self.suggestion_label.clone();
+        let suggestion_action_btn_rx = self.suggestion_action_btn.clone();
+        let pending_suggestion_rx = self.pending_suggestion.clone();
 
         glib::MainContext::default().spawn_local(async move {
             let mut last_refresh = std::time::Instant::now();
@@ -1866,6 +1931,12 @@ impl MainWindow {
                         };
                         progress_bar_clone.set_fraction(fraction.min(1.0));
                     }
+                    CrawlUpdate::Suggestion(suggestion) => {
+                        suggestion_label_rx.set_text(&suggestion.message);
+                        suggestion_action_btn_rx.set_label(&suggestion.action_label);
+                        *pending_suggestion_rx.borrow_mut() = Some(suggestion.action);
+                        suggestion_revealer_rx.set_reveal_child(true);
+                    }
                     CrawlUpdate::Finished => {
                         let _refresh_guard = UiBusyGuard::new(busy_finish.clone(), start_button_clone.clone());
                         progress_bar_clone.set_visible(false);
@@ -1901,24 +1972,114 @@ impl MainWindow {
             }
         });
 
-        // Start button action
-        let tx_clone = tx.clone();
+        // Start button & recovery suggestion actions
+        let launch_crawl: Rc<dyn Fn(String)> = {
+            let state_start = state.clone();
+            let table_start = table.clone();
+            let details_start = details.clone();
+            let link_opps_start = link_opps.clone();
+            let discovery_start = discovery.clone();
+            let issues_start = issues.clone();
+            let sidebar_start = sidebar.clone();
+            let summary_panel_start = summary_panel.clone();
+            let pause_button_start = pause_button.clone();
+            let progress_bar_start = progress_bar.clone();
+            let status_label_start = status_label.clone();
+            let crawl_start_time = crawl_start_time.clone();
+            let crawl_samples = crawl_samples.clone();
+            let tx_worker = tx.clone();
+            let busy = ui_busy.clone();
+            let crawl_active = ui_crawl_active.clone();
+            let btn = start_button.clone();
+            let suggestion_revealer = self.suggestion_revealer.clone();
+            let pending_suggestion = self.pending_suggestion.clone();
+
+            Rc::new(move |urls: String| {
+                if busy.get() || crawl_active.get() || state_start.is_crawling() {
+                    return;
+                }
+                *pending_suggestion.borrow_mut() = None;
+                suggestion_revealer.set_reveal_child(false);
+                crawl_active.set(true);
+                state_start.reset();
+                state_start.set_crawling(true);
+                table_start.clear();
+                details_start.clear();
+                link_opps_start.clear();
+                discovery_start.refresh();
+                issues_start.refresh();
+                sidebar_start.update_counts(&state_start);
+                summary_panel_start.update(&state_start);
+
+                *crawl_start_time.borrow_mut() = Some(std::time::Instant::now());
+                crawl_samples.borrow_mut().clear();
+
+                btn.set_label("Stop");
+                btn.add_css_class("destructive-action");
+                pause_button_start.set_sensitive(true);
+                pause_button_start.set_label("Pause");
+                progress_bar_start.set_visible(true);
+                progress_bar_start.set_fraction(0.0);
+                status_label_start.set_text("Crawling started...");
+
+                let state_clone = state_start.clone();
+                let tx_worker = tx_worker.clone();
+                tokio::spawn(async move {
+                    let crawler = Crawler::new(state_clone, tx_worker);
+                    crawler.start(urls).await;
+                });
+            })
+        };
+
+        {
+            let suggestion_revealer = self.suggestion_revealer.clone();
+            let pending_suggestion = self.pending_suggestion.clone();
+            self.suggestion_dismiss_btn.connect_clicked(move |_| {
+                *pending_suggestion.borrow_mut() = None;
+                suggestion_revealer.set_reveal_child(false);
+            });
+        }
+
+        {
+            let suggestion_revealer = self.suggestion_revealer.clone();
+            let pending_suggestion = self.pending_suggestion.clone();
+            let address_entry = address_entry.clone();
+            let state_retry = state.clone();
+            let launch_retry = launch_crawl.clone();
+            let busy = ui_busy.clone();
+            let crawl_active = ui_crawl_active.clone();
+            self.suggestion_action_btn.connect_clicked(move |_| {
+                if busy.get() || crawl_active.get() || state_retry.is_crawling() {
+                    return;
+                }
+                let Some(action) = pending_suggestion.borrow_mut().take() else {
+                    suggestion_revealer.set_reveal_child(false);
+                    return;
+                };
+                suggestion_revealer.set_reveal_child(false);
+                match action {
+                    CrawlSuggestionAction::CrawlUrl(url) => {
+                        address_entry.set_text(&url);
+                        launch_retry(url);
+                    }
+                    CrawlSuggestionAction::RetryWithUserAgent { url, user_agent } => {
+                        let mut config = state_retry.get_config();
+                        config.user_agent = user_agent;
+                        state_retry.set_config(config);
+                        address_entry.set_text(&url);
+                        launch_retry(url);
+                    }
+                }
+            });
+        }
+
         let state_start = state.clone();
         let pause_button_start = pause_button.clone();
         let address_entry_start = address_entry.clone();
-        let table_start = table.clone();
-        let details_start = details.clone();
-        let sidebar_start = sidebar.clone();
-        let progress_bar_start = progress_bar.clone();
         let status_label_start = status_label.clone();
-        let summary_panel_start = summary_panel.clone();
         let loaded_list_urls_start = loaded_list_urls.clone();
-        let link_opps_start = link_opps.clone();
-        let discovery_start = discovery.clone();
-        let issues_start = issues.clone();
         let window_start = self.window.clone();
-        let crawl_start_time_start = crawl_start_time.clone();
-        let crawl_samples_start = crawl_samples.clone();
+        let launch_start = launch_crawl.clone();
 
         start_button.connect_clicked(move |btn| {
             if !btn.is_sensitive() || ui_busy.get() { return; }
@@ -1963,56 +2124,7 @@ impl MainWindow {
                     raw_url
                 };
 
-                let do_start = {
-                    let state_start = state_start.clone();
-                    let table_start = table_start.clone();
-                    let details_start = details_start.clone();
-                    let link_opps_start = link_opps_start.clone();
-                    let discovery_start = discovery_start.clone();
-                    let issues_start = issues_start.clone();
-                    let sidebar_start = sidebar_start.clone();
-                    let summary_panel_start = summary_panel_start.clone();
-                    let pause_button_start = pause_button_start.clone();
-                    let progress_bar_start = progress_bar_start.clone();
-                    let status_label_start = status_label_start.clone();
-                    let crawl_start_time = crawl_start_time_start.clone();
-                    let crawl_samples = crawl_samples_start.clone();
-                    let tx_worker = tx_clone.clone();
-                    let busy = ui_busy.clone();
-                    let crawl_active = ui_crawl_active.clone();
-                    let btn = btn.clone();
-
-                    move |urls: String| {
-                        if busy.get() || crawl_active.get() || state_start.is_crawling() { return; }
-                        crawl_active.set(true);
-                        state_start.reset();
-                        state_start.set_crawling(true);
-                        table_start.clear();
-                        details_start.clear();
-                        link_opps_start.clear();
-                        discovery_start.refresh();
-                        issues_start.refresh();
-                        sidebar_start.update_counts(&state_start);
-                        summary_panel_start.update(&state_start);
-
-                        *crawl_start_time.borrow_mut() = Some(std::time::Instant::now());
-                        crawl_samples.borrow_mut().clear();
-
-                        btn.set_label("Stop");
-                        btn.add_css_class("destructive-action");
-                        pause_button_start.set_sensitive(true);
-                        pause_button_start.set_label("Pause");
-                        progress_bar_start.set_visible(true);
-                        progress_bar_start.set_fraction(0.0);
-                        status_label_start.set_text("Crawling started...");
-
-                        let state_clone = state_start.clone();
-                        tokio::spawn(async move {
-                            let crawler = Crawler::new(state_clone, tx_worker);
-                            crawler.start(urls).await;
-                        });
-                    }
-                };
+                let do_start = launch_start.clone();
 
                 let existing_count = state_start.get_stats().crawled;
                 if existing_count > 0 {
@@ -2083,6 +2195,8 @@ struct ProjectOpenContext {
     discovery: Rc<crate::ui::discovery::DiscoveryPanel>,
     issues: Rc<crate::ui::issues::IssuesPanel>,
     status_label: gtk::Label,
+    suggestion_revealer: gtk::Revealer,
+    pending_suggestion: Rc<RefCell<Option<CrawlSuggestionAction>>>,
 }
 
 fn open_project_with_guard(path: std::path::PathBuf, ctx: ProjectOpenContext) {
@@ -2152,6 +2266,8 @@ fn load_project_from_path(path: std::path::PathBuf, ctx: ProjectOpenContext) {
 
         match load_result {
             Ok(Ok(project)) => {
+                *ctx.pending_suggestion.borrow_mut() = None;
+                ctx.suggestion_revealer.set_reveal_child(false);
                 ctx.address_entry.set_text(&project.seed_url);
                 ctx.state.load_project(project.clone());
 
