@@ -24,7 +24,8 @@ The library owns crawling, audit data, provider integrations and graph algorithm
 | `src/ui/table.rs`, `row_data.rs` | Virtualized results model, sorting, filtering, CSV/clipboard exports |
 | `src/ui/details.rs` | Selected-page diagnostics and metadata suggestions |
 | `src/ui/sidebar.rs`, `summary.rs` | Filters and local health/progress summaries |
-| `src/ui/link_opportunities.rs` | Cancellable background internal-link and n-gram analysis |
+| `src/link_opportunities.rs` | GTK-independent Ahrefs-style rule filters for Link Opportunities and Top N-grams |
+| `src/ui/link_opportunities.rs` | Cancellable background internal-link and n-gram analysis, live rule filter bar and filtered CSV export |
 | `src/ui/theme.rs` | Shared semantic Libadwaita styling |
 | `src/ui/site_visualizer.rs` | Native Cairo URL icicle UI |
 | `src/visualization/` | CSR graph snapshots, layouts, PageRank, sections, filtering and exports |
