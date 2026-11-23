@@ -23,3 +23,7 @@ _Avoid_: Proof, detail, payload
 **Severity**:
 One of four fixed tiers — **Critical**, **High**, **Medium**, **Low** — expressing contextual audit guidance for prioritization rather than a guaranteed traffic or ranking impact.
 _Avoid_: Priority, score, impact level
+
+**Link Opportunity**:
+A suggested internal hyperlink from a crawled source page to an indexable target page where the source page's visible text already contains the target page's candidate Anchor Keyword without an existing link to that target.
+_Avoid_: Missing link, backlink suggestion
